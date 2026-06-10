@@ -13,6 +13,8 @@ object ModuleSettings {
     const val KEY_PURIFY_STORY_VIDEO_AD_BLOCKED_COUNT = "purify_story_video_ad_blocked_count"
     const val KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED = "skip_mini_game_reward_ad_enabled"
     const val KEY_BLOCK_LIVE_RESERVATION_ENABLED = "block_live_reservation_enabled"
+    const val KEY_DISABLE_LONG_PRESS_COPY_ENABLED = "disable_long_press_copy_enabled"
+    const val KEY_ENHANCE_LONG_PRESS_COPY_ENABLED = "enhance_long_press_copy_enabled"
     const val KEY_LAST_ACCESS_KEY = "last_access_key"
 
     val defaultStoryVideoAdTags = setOf("ad")
@@ -29,38 +31,36 @@ object ModuleSettings {
         StoryVideoAdTag("topic", "话题", "话题"),
     )
 
-    fun isSkipSplashAdEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_SKIP_SPLASH_AD_ENABLED, true)
-    }
+    fun isSkipSplashAdEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_SKIP_SPLASH_AD_ENABLED, true)
 
-    fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)
-    }
+    fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)
 
-    fun isAutoLikeVideoDetailEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false)
-    }
+    fun isAutoLikeVideoDetailEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false)
 
-    fun isFixLiveQualityUrlEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false)
-    }
+    fun isFixLiveQualityUrlEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false)
 
-    fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)
-    }
+    fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)
 
-    fun getPurifyStoryVideoAdTags(prefs: SharedPreferences): Set<String> {
-        return prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)
+    fun getPurifyStoryVideoAdTags(prefs: SharedPreferences): Set<String> =
+        prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)
             ?: defaultStoryVideoAdTags
-    }
 
-    fun isSkipMiniGameRewardAdEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, true)
-    }
+    fun isSkipMiniGameRewardAdEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, true)
 
-    fun isBlockLiveReservationEnabled(prefs: SharedPreferences): Boolean {
-        return prefs.getBoolean(KEY_BLOCK_LIVE_RESERVATION_ENABLED, false)
-    }
+    fun isBlockLiveReservationEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_BLOCK_LIVE_RESERVATION_ENABLED, false)
+
+    fun isDisableLongPressCopyEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_DISABLE_LONG_PRESS_COPY_ENABLED, false)
+
+    fun isEnhanceLongPressCopyEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_ENHANCE_LONG_PRESS_COPY_ENABLED, false)
 }
 
 data class StoryVideoAdTag(

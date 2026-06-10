@@ -1,18 +1,16 @@
 # bzzq
 
-`bzzq` 是一個基於 `libxposed API 101` 的 Android Xposed 模組，目標是為 Bilibili 客戶端提供一組偏實用、偏輕量的功能修補與廣告淨化能力。
+`bzzq` 是一个基于 `libxposed API 101` 的 Android Xposed 模块，面向 Bilibili 客户端提供轻量的功能修补、广告净化和小型实用工具。
 
-目前專案已經適配新的模組入口與設定頁邏輯，並將框架支援範圍擴展為：
+当前模块仅在以下框架环境中启用：
 
 - `NPatch`
 - `Vector`
-- `LSPosed` 且版本大於 `7700`
+- `LSPosed` 版本码大于 `7700`
 
-不符合上述條件時，模組會在載入後保持停用，不對目標 App 注入 hook。
+若不满足上述条件，模块会在载入后保持停用，不向目标应用安装 hook。
 
-## 目標包名
-
-模組目前會對以下 Bilibili 套件生效：
+## 目标包名
 
 ```text
 tv.danmaku.bili
@@ -21,89 +19,102 @@ tv.danmaku.bilibilihd
 com.bilibili.app.blue
 ```
 
-## 目前功能
+## 当前功能
 
-目前已接入的功能如下：
+- 跳过开屏广告
+- 解锁部分视频功能
+- 视频详情页自动点赞
+- 修正直播画质 URL
+- 跳过小游戏奖励广告
+- 屏蔽直播预约卡片
+- 净化竖屏视频广告
+- 复制最近捕获到的 `access_key`
+- 在 Bilibili 的“其它设置”页注入 `bzzq` 模块设置入口
 
-- 跳過開屏廣告
-- 解鎖部分影片功能
-- 影片詳情頁自動點讚
-- 修正直播畫質 URL
-- 跳過小遊戲獎勵廣告
-- 屏蔽直播預約
-- 淨化豎屏影片廣告
-- 在 Bilibili 設定頁與「我的」頁注入 `bzzq` 設定入口
+## 模块设置
 
-其中「豎屏影片廣告淨化」支援按標籤過濾，並會在模組設定頁內顯示累計攔截數。
+模块设置页会显示所有当前已接入的功能，包括默认启用的项目。
+
+当前默认开启的功能：
+
+- 跳过开屏广告
+- 解锁视频功能
+- 跳过小游戏奖励广告
+
+其余功能默认关闭，需要手动开启。
 
 ## 使用方式
 
-1. 安裝 Xposed 框架，並確認你使用的是 `NPatch`、`Vector`，或版本碼大於 `7700` 的 `LSPosed`。
-2. 安裝本模組 APK。
-3. 在框架管理器中啟用模組。
-4. 將作用域授予目標 Bilibili App。
-5. 重啟對應 App。
+1. 安装并启用受支持的 Xposed 框架。
+2. 安装本模块 APK。
+3. 在框架管理器中启用本模块。
+4. 将作用域授予目标 Bilibili 应用。
+5. 重启目标应用。
 
-啟用後，你可以透過以下任一入口打開模組設定：
+启用后，可通过以下方式打开模块设置：
 
-- 桌面上的 `bzzq` App 圖示
-- Bilibili 設定頁中的 `bzzq` 入口
-- Bilibili「我的」頁中的 `bzzq` 入口
+- 桌面上的 `bzzq` 启动图标
+- Bilibili `设置 -> 其它设置 -> bzzq`
 
-## 建置
+如果未看到内部入口，通常说明当前客户端版本的设置页结构与已适配版本不同，需要继续调整 hook。
 
-### 環境需求
+## 构建
+
+### 环境要求
 
 - JDK `21`
 - Android Gradle Plugin `8.13.1`
 - Kotlin `2.3.21`
 - Gradle Wrapper `8.14.4`
 
-### 調試包
+### Debug 构建
 
 ```powershell
 .\gradlew.bat assembleDebug
 ```
 
-輸出位置：
+输出文件：
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 發行包
+### Release 构建
+
+`release` 也属于正式支持的构建产物，不只是 `debug`。
 
 ```powershell
 .\gradlew.bat assembleRelease
 ```
 
-若已配置簽名資訊，release 構建完成後會額外輸出一份帶版本號的 APK：
+若已在 `gradle.properties` / 本地环境中配置签名参数，构建完成后会生成 release APK，并额外复制一份带版本号的产物：
 
 ```text
+app/build/outputs/apk/release/app-release.apk
 app/build/outputs/apk/release/bzzq_<version>.apk
 ```
 
-目前專案版本號定義於 `gradle.properties` 的 `releaseName`。
+当前版本名由 `gradle.properties` 中的 `releaseName` 控制。
 
-## 專案特性
+## 项目特性
 
 - 使用 `libxposed API 101`
-- 採用靜態 scope 聲明目標包名
+- 使用静态 scope 声明目标包名
 - 使用 Java/Kotlin `21`
-- 僅依賴 `compileOnly` 的 `libxposed api`
-- 以反射與動態 hook 為主，降低對特定客戶端版本的硬編碼耦合
+- `libxposed api` 以 `compileOnly` 方式引入
+- 主要通过反射和动态 hook 适配客户端结构变化
 
-## 注意事項
+## 兼容性说明
 
-- 這是一個針對 Bilibili 客戶端行為做修改的 Xposed 模組，兼容性會受到 App 版本、框架實作與混淆變化影響。
-- 某些 hook 若遇到類名、方法簽名或欄位結構變動，可能只會局部失效，不代表整個模組完全不可用。
-- 若設定入口未出現，通常代表對應頁面的類名或版面結構已發生變動，需要後續調整 hook。
+- 这是一个针对 Bilibili 客户端行为做修改的 Xposed 模块，兼容性会受到 App 版本、混淆变化和框架实现影响。
+- 某些 hook 失效时，通常是类名、方法签名或字段结构发生变化，不一定代表整个模块不可用。
+- “其它设置”入口采用了参考 `BiliRoaming` / `BiliRoamingX` 的注入思路，但不同版本客户端的设置页结构并不完全一致。
 
-## 授權
+## 授权
 
-本專案使用木蘭公共許可證第 2 版（Mulan PubL v2）。
+本项目使用木兰公共许可证第 2 版（Mulan PubL v2）。
 
-完整授權內容見 [LICENSE](LICENSE)。
-官方文本請參考：
+完整授权内容见 [LICENSE](LICENSE)。
+官方文本请参考：
 
 <http://license.coscl.org.cn/MulanPubL-2.0>

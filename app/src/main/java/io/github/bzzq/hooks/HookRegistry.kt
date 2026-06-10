@@ -23,6 +23,7 @@ object HookRegistry {
             MiniGameRewardAdHook(packageName),
             BiliEntryHook(packageName),
             AccessKeyCaptureHook(packageName),
+            FreeCopyHook(packageName),
         )
     }
 
