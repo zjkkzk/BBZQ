@@ -40,6 +40,11 @@ class SettingsActivity : Activity() {
             true,
         ))
         root.addView(createFeatureSwitch(
+            R.string.auto_like_video_detail_title,
+            ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED,
+            false,
+        ))
+        root.addView(createFeatureSwitch(
             R.string.fix_live_quality_url_title,
             ModuleSettings.KEY_FIX_LIVE_QUALITY_URL_ENABLED,
             false,

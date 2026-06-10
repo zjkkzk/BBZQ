@@ -16,6 +16,7 @@ object HookRegistry {
             PackageLoadLogHook(packageName),
             GsonSplashAdHook(packageName),
             VideoFeatureUnlockHook(packageName),
+            AutoLikeVideoDetailHook(packageName),
             LiveQualityHook(packageName),
             StoryVideoAdHook(packageName),
             MiniGameRewardAdHook(packageName),

@@ -6,6 +6,7 @@ object ModuleSettings {
     const val PREFS_NAME = "bzzq_settings"
     const val KEY_SKIP_SPLASH_AD_ENABLED = "skip_splash_ad_enabled"
     const val KEY_UNLOCK_VIDEO_FEATURES_ENABLED = "unlock_video_features_enabled"
+    const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
     const val KEY_FIX_LIVE_QUALITY_URL_ENABLED = "fix_live_quality_url_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
     const val KEY_PURIFY_STORY_VIDEO_AD_TAGS = "purify_story_video_ad_tags"
@@ -32,6 +33,10 @@ object ModuleSettings {
 
     fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean {
         return prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)
+    }
+
+    fun isAutoLikeVideoDetailEnabled(prefs: SharedPreferences): Boolean {
+        return prefs.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false)
     }
 
     fun isFixLiveQualityUrlEnabled(prefs: SharedPreferences): Boolean {
