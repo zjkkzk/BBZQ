@@ -49,11 +49,18 @@ jobs:
       - name: Build with gradle
         run: |
           chmod 777 ./gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleDebug assembleRelease
 
-      - name: Upload artifacts
+      - name: Upload debug artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: bzzq-${{ env.VERSION }}
+          name: bzzq-${{ env.VERSION }}-debug
           path: 'app/build/outputs/apk/debug/*.apk'
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: bzzq-${{ env.VERSION }}-release
+          path: 'app/release/*.apk'
