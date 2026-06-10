@@ -43,134 +43,25 @@ class SettingsActivity : Activity() {
         }
 
         content.addView(createSectionTitle(R.string.account_tools_section_title))
-        content.addView(
-            createClickableItem(
-                R.string.copy_access_key_title,
-                R.string.copy_access_key_summary,
-            ) {
-                val token = prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null)
-                if (token.isNullOrEmpty()) {
-                    Toast.makeText(this, R.string.copy_access_key_not_found, Toast.LENGTH_SHORT).show()
-                } else {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("access_key", token))
-                    Toast.makeText(this, R.string.copy_access_key_success, Toast.LENGTH_SHORT).show()
-                }
-            },
-        )
+        accountActionSpecs.forEach { spec ->
+            content.addView(createClickableItem(spec.titleRes, spec.summaryRes, spec.onClick))
+        }
 
         content.addView(createSectionTitle(R.string.general_features_section_title))
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.skip_splash_ad_title,
-                summaryRes = R.string.skip_splash_ad_summary,
-                key = ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED,
-                defaultValue = true,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.unlock_video_features_title,
-                summaryRes = R.string.unlock_video_features_summary,
-                key = ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED,
-                defaultValue = true,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.auto_like_video_detail_title,
-                summaryRes = R.string.auto_like_video_detail_summary,
-                key = ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.fix_live_quality_url_title,
-                summaryRes = R.string.fix_live_quality_url_summary,
-                key = ModuleSettings.KEY_FIX_LIVE_QUALITY_URL_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.skip_mini_game_reward_ad_title,
-                summaryRes = R.string.skip_mini_game_reward_ad_summary,
-                key = ModuleSettings.KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED,
-                defaultValue = true,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.block_live_reservation_title,
-                summaryRes = R.string.block_live_reservation_summary,
-                key = ModuleSettings.KEY_BLOCK_LIVE_RESERVATION_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.block_live_room_qoe_popup_title,
-                summaryRes = R.string.block_live_room_qoe_popup_summary,
-                key = ModuleSettings.KEY_BLOCK_LIVE_ROOM_QOE_POPUP_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.disable_long_press_copy_title,
-                summaryRes = R.string.disable_long_press_copy_summary,
-                key = ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED,
-                defaultValue = false,
-            ).also { layout ->
-                disableLongPressCopySwitch = layout.getChildAt(1) as Switch
-            },
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.enhance_long_press_copy_title,
-                summaryRes = R.string.enhance_long_press_copy_summary,
-                key = ModuleSettings.KEY_ENHANCE_LONG_PRESS_COPY_ENABLED,
-                defaultValue = false,
-            ).also { layout ->
-                enhanceLongPressCopySwitch = layout.getChildAt(1) as Switch
-            },
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.purify_share_title,
-                summaryRes = R.string.purify_share_summary,
-                key = ModuleSettings.KEY_PURIFY_SHARE_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.full_number_format_title,
-                summaryRes = R.string.full_number_format_summary,
-                key = ModuleSettings.KEY_FULL_NUMBER_FORMAT_ENABLED,
-                defaultValue = false,
-            ),
-        )
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.unlock_comment_gif_title,
-                summaryRes = R.string.unlock_comment_gif_summary,
-                key = ModuleSettings.KEY_UNLOCK_COMMENT_GIF_ENABLED,
-                defaultValue = false,
-            ),
-        )
+        generalToggleSpecs.forEach { spec ->
+            content.addView(createFeatureSwitch(spec).also { layout ->
+                val switchView = layout.getChildAt(1) as Switch
+                when (spec.key) {
+                    ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED -> disableLongPressCopySwitch = switchView
+                    ModuleSettings.KEY_ENHANCE_LONG_PRESS_COPY_ENABLED -> enhanceLongPressCopySwitch = switchView
+                }
+            })
+        }
+
         content.addView(createSectionTitle(R.string.story_filter_section_title))
-        content.addView(
-            createFeatureSwitch(
-                titleRes = R.string.purify_story_video_ad_title,
-                summaryRes = R.string.purify_story_video_ad_summary,
-                key = ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED,
-                defaultValue = false,
-            ).also { layout ->
-                storyVideoAdSwitch = layout.getChildAt(1) as Switch
-            },
-        )
+        content.addView(createFeatureSwitch(storyToggleSpec).also { layout ->
+            storyVideoAdSwitch = layout.getChildAt(1) as Switch
+        })
 
         val tagsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -244,12 +135,7 @@ class SettingsActivity : Activity() {
         }
     }
 
-    private fun createFeatureSwitch(
-        titleRes: Int,
-        summaryRes: Int,
-        key: String,
-        defaultValue: Boolean,
-    ): LinearLayout {
+    private fun createFeatureSwitch(spec: ToggleSpec): LinearLayout {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -263,19 +149,19 @@ class SettingsActivity : Activity() {
         }
 
         textLayout.addView(TextView(this).apply {
-            text = getString(titleRes)
+            text = getString(spec.titleRes)
             textSize = 17f
             setTextColor(Color.parseColor("#212121"))
         })
         textLayout.addView(TextView(this).apply {
-            text = getString(summaryRes)
+            text = getString(spec.summaryRes)
             textSize = 13f
             setTextColor(Color.parseColor("#757575"))
             setPadding(0, dp(4), 0, 0)
         })
         textLayout.addView(TextView(this).apply {
             text = getString(
-                if (defaultValue) R.string.default_enabled_hint else R.string.default_disabled_hint,
+                if (spec.defaultValue) R.string.default_enabled_hint else R.string.default_disabled_hint,
             )
             textSize = 12f
             setTextColor(Color.parseColor("#9E9E9E"))
@@ -283,13 +169,13 @@ class SettingsActivity : Activity() {
         })
 
         val switchView = Switch(this).apply {
-            isChecked = prefs.getBoolean(key, defaultValue)
+            isChecked = prefs.getBoolean(spec.key, spec.defaultValue)
             setOnCheckedChangeListener { _, isChecked ->
                 if (!refreshing) {
-                    prefs.edit().putBoolean(key, isChecked).apply()
+                    prefs.edit().putBoolean(spec.key, isChecked).apply()
                     if (
-                        key == ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED ||
-                        key == ModuleSettings.KEY_ENHANCE_LONG_PRESS_COPY_ENABLED
+                        spec.key == ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED ||
+                        spec.key == ModuleSettings.KEY_ENHANCE_LONG_PRESS_COPY_ENABLED
                     ) {
                         refresh()
                     }
@@ -305,7 +191,7 @@ class SettingsActivity : Activity() {
     private fun createClickableItem(
         titleRes: Int,
         summaryRes: Int,
-        onClick: () -> Unit,
+        onClick: SettingsActivity.() -> Unit,
     ): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -314,7 +200,7 @@ class SettingsActivity : Activity() {
             val outValue = android.util.TypedValue()
             theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
             setBackgroundResource(outValue.resourceId)
-            setOnClickListener { onClick() }
+            setOnClickListener { this@SettingsActivity.onClick() }
 
             addView(TextView(this@SettingsActivity).apply {
                 text = getString(titleRes)
@@ -364,5 +250,62 @@ class SettingsActivity : Activity() {
     private fun selectedTagKeys(): Set<String> =
         tagCheckBoxes.filterValues { it.isChecked }.keys.toSet()
 
+    private fun copyAccessKey() {
+        val token = prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null)
+        if (token.isNullOrEmpty()) {
+            Toast.makeText(this, R.string.copy_access_key_not_found, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("access_key", token))
+        Toast.makeText(this, R.string.copy_access_key_success, Toast.LENGTH_SHORT).show()
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private data class ToggleSpec(
+        val key: String,
+        val titleRes: Int,
+        val summaryRes: Int,
+        val defaultValue: Boolean,
+    )
+
+    private data class ActionSpec(
+        val titleRes: Int,
+        val summaryRes: Int,
+        val onClick: SettingsActivity.() -> Unit,
+    )
+
+    private companion object {
+        private val accountActionSpecs = listOf(
+            ActionSpec(
+                titleRes = R.string.copy_access_key_title,
+                summaryRes = R.string.copy_access_key_summary,
+                onClick = SettingsActivity::copyAccessKey,
+            ),
+        )
+
+        private val generalToggleSpecs = listOf(
+            ToggleSpec(ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED, R.string.skip_splash_ad_title, R.string.skip_splash_ad_summary, true),
+            ToggleSpec(ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED, R.string.unlock_video_features_title, R.string.unlock_video_features_summary, true),
+            ToggleSpec(ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, R.string.auto_like_video_detail_title, R.string.auto_like_video_detail_summary, false),
+            ToggleSpec(ModuleSettings.KEY_FIX_LIVE_QUALITY_URL_ENABLED, R.string.fix_live_quality_url_title, R.string.fix_live_quality_url_summary, false),
+            ToggleSpec(ModuleSettings.KEY_SKIP_MINI_GAME_REWARD_AD_ENABLED, R.string.skip_mini_game_reward_ad_title, R.string.skip_mini_game_reward_ad_summary, true),
+            ToggleSpec(ModuleSettings.KEY_BLOCK_LIVE_RESERVATION_ENABLED, R.string.block_live_reservation_title, R.string.block_live_reservation_summary, false),
+            ToggleSpec(ModuleSettings.KEY_BLOCK_LIVE_ROOM_QOE_POPUP_ENABLED, R.string.block_live_room_qoe_popup_title, R.string.block_live_room_qoe_popup_summary, false),
+            ToggleSpec(ModuleSettings.KEY_DISABLE_LONG_PRESS_COPY_ENABLED, R.string.disable_long_press_copy_title, R.string.disable_long_press_copy_summary, false),
+            ToggleSpec(ModuleSettings.KEY_ENHANCE_LONG_PRESS_COPY_ENABLED, R.string.enhance_long_press_copy_title, R.string.enhance_long_press_copy_summary, false),
+            ToggleSpec(ModuleSettings.KEY_PURIFY_SHARE_ENABLED, R.string.purify_share_title, R.string.purify_share_summary, false),
+            ToggleSpec(ModuleSettings.KEY_FULL_NUMBER_FORMAT_ENABLED, R.string.full_number_format_title, R.string.full_number_format_summary, false),
+            ToggleSpec(ModuleSettings.KEY_UNLOCK_COMMENT_GIF_ENABLED, R.string.unlock_comment_gif_title, R.string.unlock_comment_gif_summary, false),
+        )
+
+        private val storyToggleSpec = ToggleSpec(
+            ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED,
+            R.string.purify_story_video_ad_title,
+            R.string.purify_story_video_ad_summary,
+            false,
+        )
+    }
 }

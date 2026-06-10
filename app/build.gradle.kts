@@ -38,6 +38,10 @@ android {
         targetSdk = 35
         versionCode = releaseCode
         versionName = releaseName
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -71,4 +75,6 @@ configurations.all {
 
 dependencies {
     compileOnly(libs.libxposed.api)
+    implementation(libs.dexkit)
+    implementation(libs.mmkv)
 }
