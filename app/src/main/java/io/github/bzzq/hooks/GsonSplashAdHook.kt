@@ -1,40 +1,38 @@
 package io.github.bzzq.hooks
 
 import io.github.bzzq.ModuleSettings
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.lang.reflect.Field
 
 class GsonSplashAdHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
+    override fun install(context: HookContext) {
         val gsonClass = runCatching {
-            Class.forName(GSON_CLASS_NAME, false, packageReady.getClassLoader())
+            Class.forName(GSON_CLASS_NAME, false, context.classLoader)
         }.getOrElse {
-            log("Gson class not found in ${packageReady.getPackageName()}", it)
+            context.log("Gson class not found in ${context.packageName}", it)
             return
         }
 
         val fromJsonMethods = gsonClass.declaredMethods.filter { it.name == FROM_JSON_METHOD_NAME }
         if (fromJsonMethods.isEmpty()) {
-            log("Gson.fromJson not found in ${packageReady.getPackageName()}", null)
+            context.log("Gson.fromJson not found in ${context.packageName}", null)
             return
         }
 
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+        val prefs = context.prefs
         fromJsonMethods.forEach { method ->
-            xposed.hook(method).intercept { chain ->
+            context.xposed.hook(method).intercept { chain ->
                 val result = chain.proceed()
                 if (ModuleSettings.isSkipSplashAdEnabled(prefs)) {
-                    runCatching { processGsonResult(result, log) }
-                        .onFailure { log("Failed to process Gson splash response", it) }
+                    runCatching { processGsonResult(result, context.log) }
+                        .onFailure { context.log("Failed to process Gson splash response", it) }
                 }
                 result
             }
         }
 
-        log("Installed splash ad skip hook for ${packageReady.getPackageName()}", null)
+        context.log("Installed splash ad skip hook for ${context.packageName}", null)
     }
 
     private fun processGsonResult(result: Any?, log: (String, Throwable?) -> Unit) {

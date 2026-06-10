@@ -6,25 +6,23 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 class AutoLikeVideoDetailHook(
     override val targetPackageName: String,
 ) : AppHook {
     private var lastClickAt = 0L
 
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
 
         runCatching {
             val onResume = Activity::class.java.getDeclaredMethod("onResume")
-            xposed.hook(onResume)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            context.xposed.hook(onResume)
+                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
                     if (ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
-                        scheduleAutoLike(chain.getThisObject(), prefs, log)
+                        scheduleAutoLike(chain.getThisObject(), prefs, context.log)
                     }
                     result
                 }
@@ -33,19 +31,19 @@ class AutoLikeVideoDetailHook(
                 "onWindowFocusChanged",
                 Boolean::class.javaPrimitiveType,
             )
-            xposed.hook(onWindowFocusChanged)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            context.xposed.hook(onWindowFocusChanged)
+                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
                     if (chain.getArg(0) == true && ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
-                        scheduleAutoLike(chain.getThisObject(), prefs, log)
+                        scheduleAutoLike(chain.getThisObject(), prefs, context.log)
                     }
                     result
                 }
 
-            log("Installed video detail auto-like hook for ${packageReady.getPackageName()}", null)
+            context.log("Installed video detail auto-like hook for ${context.packageName}", null)
         }.onFailure {
-            log("Failed to install video detail auto-like hook", it)
+            context.log("Failed to install video detail auto-like hook", it)
         }
     }
 

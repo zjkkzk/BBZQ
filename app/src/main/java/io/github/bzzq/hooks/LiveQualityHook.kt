@@ -4,7 +4,6 @@ import android.content.SharedPreferences
 import android.net.Uri
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import org.json.JSONArray
 import java.lang.reflect.Modifier
 
@@ -14,12 +13,12 @@ class LiveQualityHook(
     @Volatile
     private var nextQn: String = ""
 
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
-        val classLoader = packageReady.getClassLoader()
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+    override fun install(context: HookContext) {
+        val classLoader = context.classLoader
+        val prefs = context.prefs
 
-        hookSelectorUri(xposed, classLoader, prefs, log)
-        hookHttpUrlParse(xposed, classLoader, prefs, log)
+        hookSelectorUri(context.xposed, classLoader, prefs, context.log)
+        hookHttpUrlParse(context.xposed, classLoader, prefs, context.log)
     }
 
     private fun hookSelectorUri(

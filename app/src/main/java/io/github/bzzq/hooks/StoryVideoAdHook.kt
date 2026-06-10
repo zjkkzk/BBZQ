@@ -3,19 +3,17 @@ package io.github.bzzq.hooks
 import android.content.SharedPreferences
 import io.github.bzzq.ModuleSettings
 import io.github.bzzq.StoryVideoAdTag
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 class StoryVideoAdHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
+    override fun install(context: HookContext) {
         val storyPagerPlayerClass = runCatching {
-            Class.forName(STORY_PAGER_PLAYER_CLASS_NAME, false, packageReady.getClassLoader())
+            Class.forName(STORY_PAGER_PLAYER_CLASS_NAME, false, context.classLoader)
         }.getOrElse {
-            log("StoryPagerPlayer class not found in ${packageReady.getPackageName()}", it)
+            context.log("StoryPagerPlayer class not found in ${context.packageName}", it)
             return
         }
 
@@ -26,23 +24,23 @@ class StoryVideoAdHook(
                 List::class.java.isAssignableFrom(method.parameterTypes[0])
         }
         if (addVideoMethods.isEmpty()) {
-            log("StoryPagerPlayer add-video method not found in ${packageReady.getPackageName()}", null)
+            context.log("StoryPagerPlayer add-video method not found in ${context.packageName}", null)
             return
         }
 
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+        val prefs = context.prefs
         addVideoMethods.forEach { method ->
             method.isAccessible = true
-            xposed.hook(method).intercept { chain ->
+            context.xposed.hook(method).intercept { chain ->
                 if (ModuleSettings.isPurifyStoryVideoAdEnabled(prefs)) {
-                    runCatching { purifyStoryVideoList(chain.getArg(0), prefs, log) }
-                        .onFailure { log("Failed to purify story video ad list", it) }
+                    runCatching { purifyStoryVideoList(chain.getArg(0), prefs, context.log) }
+                        .onFailure { context.log("Failed to purify story video ad list", it) }
                 }
                 chain.proceed()
             }
         }
 
-        log("Installed story video ad hook for ${packageReady.getPackageName()}", null)
+        context.log("Installed story video ad hook for ${context.packageName}", null)
     }
 
     private fun purifyStoryVideoList(

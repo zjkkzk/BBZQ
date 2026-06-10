@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -15,17 +14,17 @@ import java.lang.reflect.Modifier
 class MiniGameRewardAdHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
-        val classLoader = packageReady.getClassLoader()
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+    override fun install(context: HookContext) {
+        val classLoader = context.classLoader
+        val prefs = context.prefs
         val rewardActivityClass = findClass(classLoader, REWARD_ACTIVITY_CLASS_NAME)
         val rewardHeaderViewClass = findClass(classLoader, REWARD_HEADER_VIEW_CLASS_NAME)
         val countDownTextViewClass = findClass(classLoader, COUNT_DOWN_TEXT_VIEW_CLASS_NAME)
         val jumpClockField = findJumpClockField(classLoader)
 
-        hookRewardActivity(xposed, rewardActivityClass, jumpClockField, prefs, log)
-        hookRewardHeaderView(xposed, rewardHeaderViewClass, prefs, log)
-        hookCountDownTextView(xposed, countDownTextViewClass, prefs, log)
+        hookRewardActivity(context.xposed, rewardActivityClass, jumpClockField, prefs, context.log)
+        hookRewardHeaderView(context.xposed, rewardHeaderViewClass, prefs, context.log)
+        hookCountDownTextView(context.xposed, countDownTextViewClass, prefs, context.log)
     }
 
     private fun hookRewardActivity(

@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Bundle
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Lightweight share purification inspired by BR/BRX:
@@ -17,14 +16,10 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 class SharePurifyHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
-        hookClipboardManager(xposed, prefs, log)
-        hookActivityShareIntent(xposed, prefs, log)
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
+        hookClipboardManager(context.xposed, prefs, context.log)
+        hookActivityShareIntent(context.xposed, prefs, context.log)
     }
 
     private fun hookClipboardManager(

@@ -4,7 +4,6 @@ import android.view.View
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Mirrors BiliRoamingX's "number format" feature for mine and space headers.
@@ -12,16 +11,12 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 class FullNumberFormatHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
-        val classLoader = packageReady.getClassLoader()
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
+        val classLoader = context.classLoader
 
-        hookMineHeader(xposed, classLoader, prefs, log)
-        hookSpaceHeader(xposed, classLoader, prefs, log)
+        hookMineHeader(context.xposed, classLoader, prefs, context.log)
+        hookSpaceHeader(context.xposed, classLoader, prefs, context.log)
     }
 
     private fun hookMineHeader(

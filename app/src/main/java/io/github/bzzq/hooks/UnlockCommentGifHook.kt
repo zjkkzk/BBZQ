@@ -2,7 +2,6 @@ package io.github.bzzq.hooks
 
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.lang.reflect.Method
 
 /**
@@ -11,17 +10,13 @@ import java.lang.reflect.Method
 class UnlockCommentGifHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
-        val classLoader = packageReady.getClassLoader()
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
+        val classLoader = context.classLoader
 
-        hookMainListReply(xposed, classLoader, prefs, log)
-        hookDetailListReply(xposed, classLoader, prefs, log)
-        hookReplyAddResponse(xposed, classLoader, prefs, log)
+        hookMainListReply(context.xposed, classLoader, prefs, context.log)
+        hookDetailListReply(context.xposed, classLoader, prefs, context.log)
+        hookReplyAddResponse(context.xposed, classLoader, prefs, context.log)
     }
 
     private fun hookMainListReply(

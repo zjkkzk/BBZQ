@@ -11,7 +11,6 @@ import android.view.View
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import org.json.JSONObject
 
 /**
@@ -22,17 +21,13 @@ import org.json.JSONObject
 class FreeCopyHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
-        val classLoader = packageReady.getClassLoader()
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
+        val classLoader = context.classLoader
 
-        hookCommentCopyMenus(xposed, classLoader, prefs, log)
-        hookConversationCopy(xposed, classLoader, prefs, log)
-        hookDescCopy(xposed, classLoader, prefs, log)
+        hookCommentCopyMenus(context.xposed, classLoader, prefs, context.log)
+        hookConversationCopy(context.xposed, classLoader, prefs, context.log)
+        hookDescCopy(context.xposed, classLoader, prefs, context.log)
     }
 
     private fun hookCommentCopyMenus(

@@ -6,5 +6,13 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 interface AppHook {
     val targetPackageName: String
 
-    fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit)
+    fun install(context: HookContext) {
+        install(context.xposed, context.packageReady, context.log)
+    }
+
+    fun install(
+        xposed: XposedInterface,
+        packageReady: PackageReadyParam,
+        log: (String, Throwable?) -> Unit,
+    ) = Unit
 }

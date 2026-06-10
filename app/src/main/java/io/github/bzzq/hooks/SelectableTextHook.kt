@@ -5,8 +5,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 
 /**
  * Runtime fallback for BRX-like "make text selectable" behavior.
@@ -14,17 +12,13 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 class SelectableTextHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+    override fun install(context: HookContext) {
+        val prefs = context.prefs
         runCatching {
             val activityClass = Activity::class.java
             val onResume = activityClass.getDeclaredMethod("onResume")
-            xposed.hook(onResume)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            context.xposed.hook(onResume)
+                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
                     if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
@@ -34,13 +28,13 @@ class SelectableTextHook(
                     val activity = chain.thisObject as? Activity ?: return@intercept result
                     activity.window?.decorView?.post {
                         runCatching { enableSelectableText(activity.window?.decorView, activity) }
-                            .onFailure { log("Failed to mark views selectable", it) }
+                            .onFailure { context.log("Failed to mark views selectable", it) }
                     }
                     result
                 }
-            log("Installed selectable-text runtime hook", null)
+            context.log("Installed selectable-text runtime hook", null)
         }.onFailure {
-            log("Failed to install selectable-text runtime hook", it)
+            context.log("Failed to install selectable-text runtime hook", it)
         }
     }
 

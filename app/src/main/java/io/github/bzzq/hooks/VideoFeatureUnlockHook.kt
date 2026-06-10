@@ -3,7 +3,6 @@ package io.github.bzzq.hooks
 import android.content.SharedPreferences
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.lang.reflect.Field
 
 /**
@@ -14,22 +13,19 @@ class VideoFeatureUnlockHook(
     override val targetPackageName: String,
 ) : AppHook {
 
-    override fun install(xposed: XposedInterface, packageReady: PackageReadyParam, log: (String, Throwable?) -> Unit) {
-        val classLoader = packageReady.getClassLoader()
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+    override fun install(context: HookContext) {
+        val classLoader = context.classLoader
+        val prefs = context.prefs
 
-        // 1. Enable trial quality in SceneControl
-        hookSetBoolean(xposed, classLoader, SCENE_CONTROL_CLASS, SET_IS_NEED_TRIAL, true, prefs, log)
-        hookGetBoolean(xposed, classLoader, SCENE_CONTROL_CLASS, GET_IS_NEED_TRIAL, true, prefs, log)
+        hookSetBoolean(context.xposed, classLoader, SCENE_CONTROL_CLASS, SET_IS_NEED_TRIAL, true, prefs, context.log)
+        hookGetBoolean(context.xposed, classLoader, SCENE_CONTROL_CLASS, GET_IS_NEED_TRIAL, true, prefs, context.log)
 
-        // 2. Enable trial quality in VideoVod
-        hookSetBoolean(xposed, classLoader, VIDEO_VOD_CLASS, SET_IS_NEED_TRIAL, true, prefs, log)
-        hookGetBoolean(xposed, classLoader, VIDEO_VOD_CLASS, GET_IS_NEED_TRIAL, true, prefs, log)
+        hookSetBoolean(context.xposed, classLoader, VIDEO_VOD_CLASS, SET_IS_NEED_TRIAL, true, prefs, context.log)
+        hookGetBoolean(context.xposed, classLoader, VIDEO_VOD_CLASS, GET_IS_NEED_TRIAL, true, prefs, context.log)
 
-        // 3. Bypass VIP requirements in StreamInfo (various versions)
         STREAM_INFO_CLASSES.forEach { className ->
-            hookRedirectFieldToMethod(xposed, classLoader, className, GET_VIP_FREE, NEED_VIP_FIELD, prefs, log)
-            hookGetBoolean(xposed, classLoader, className, GET_NEED_VIP, false, prefs, log)
+            hookRedirectFieldToMethod(context.xposed, classLoader, className, GET_VIP_FREE, NEED_VIP_FIELD, prefs, context.log)
+            hookGetBoolean(context.xposed, classLoader, className, GET_NEED_VIP, false, prefs, context.log)
         }
     }
 

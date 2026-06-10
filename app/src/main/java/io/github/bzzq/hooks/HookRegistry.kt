@@ -2,6 +2,7 @@ package io.github.bzzq.hooks
 
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import kotlin.io.use
 
 object HookRegistry {
     private val targetPackageNames = listOf(
@@ -43,9 +44,11 @@ object HookRegistry {
         if (matchingHooks.isEmpty()) return
 
         log("Installing ${matchingHooks.size} hook(s) for ${packageReady.getPackageName()}", null)
-        matchingHooks.forEach { hook ->
-            runCatching { hook.install(xposed, packageReady, log) }
-                .onFailure { log("Hook failed for ${packageReady.getPackageName()}", it) }
+        HookContext(xposed, packageReady, log).use { context ->
+            matchingHooks.forEach { hook ->
+                runCatching { hook.install(context) }
+                    .onFailure { log("Hook failed for ${packageReady.getPackageName()}", it) }
+            }
         }
     }
 }

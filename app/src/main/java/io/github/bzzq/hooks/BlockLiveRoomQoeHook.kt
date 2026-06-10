@@ -1,52 +1,41 @@
 package io.github.bzzq.hooks
 
 import io.github.bzzq.ModuleSettings
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
-
-/**
- * Mirrors the BiliRoamingX "block live room qoe popup" idea by nulling the
- * live-room user-info qoe payload after JSON parsing.
- */
 class BlockLiveRoomQoeHook(
     override val targetPackageName: String,
 ) : AppHook {
-    override fun install(
-        xposed: XposedInterface,
-        packageReady: PackageReadyParam,
-        log: (String, Throwable?) -> Unit,
-    ) {
+    override fun install(context: HookContext) {
         val gsonClass = runCatching {
-            Class.forName(GSON_CLASS_NAME, false, packageReady.getClassLoader())
+            Class.forName(GSON_CLASS_NAME, false, context.classLoader)
         }.getOrElse {
-            log("Gson class not found for live room qoe hook", it)
+            context.log("Gson class not found for live room qoe hook", it)
             return
         }
 
-        val prefs = xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
+        val prefs = context.prefs
         val fromJsonMethods = gsonClass.declaredMethods.filter { it.name == FROM_JSON_METHOD_NAME }
         if (fromJsonMethods.isEmpty()) {
-            log("Gson.fromJson not found for live room qoe hook", null)
+            context.log("Gson.fromJson not found for live room qoe hook", null)
             return
         }
 
         fromJsonMethods.forEach { method ->
             method.isAccessible = true
-            xposed.hook(method)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            context.xposed.hook(method)
+                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
                     if (!ModuleSettings.isBlockLiveRoomQoePopupEnabled(prefs)) {
                         return@intercept result
                     }
 
-                    runCatching { stripQoe(result, log) }
-                        .onFailure { log("Failed to strip live room qoe popup payload", it) }
+                    runCatching { stripQoe(result, context.log) }
+                        .onFailure { context.log("Failed to strip live room qoe popup payload", it) }
                     result
                 }
         }
 
-        log("Installed live room qoe popup hook for ${packageReady.getPackageName()}", null)
+        context.log("Installed live room qoe popup hook for ${context.packageName}", null)
     }
 
     private fun stripQoe(result: Any?, log: (String, Throwable?) -> Unit) {
