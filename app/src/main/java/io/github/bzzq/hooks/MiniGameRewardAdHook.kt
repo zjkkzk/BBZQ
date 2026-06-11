@@ -12,9 +12,9 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 class MiniGameRewardAdHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val classLoader = context.classLoader
         val prefs = context.prefs
         val rewardActivityClass = findClass(classLoader, REWARD_ACTIVITY_CLASS_NAME)

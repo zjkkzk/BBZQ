@@ -15,9 +15,9 @@ import io.github.bzzq.InAppSettingsDialog
  * Injects the settings entrance only while Bilibili's settings page is visible.
  */
 class BiliEntryHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         runCatching {
             val onResume = Activity::class.java.getDeclaredMethod("onResume")
             context.xposed.hook(onResume).intercept { chain ->

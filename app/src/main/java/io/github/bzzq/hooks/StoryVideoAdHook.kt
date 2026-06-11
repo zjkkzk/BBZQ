@@ -7,9 +7,9 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 class StoryVideoAdHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val storyPagerPlayerClass = runCatching {
             Class.forName(STORY_PAGER_PLAYER_CLASS_NAME, false, context.classLoader)
         }.getOrElse {

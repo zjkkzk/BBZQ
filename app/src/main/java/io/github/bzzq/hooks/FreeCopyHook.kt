@@ -19,9 +19,9 @@ import org.json.JSONObject
  * - optionally replace it with a selectable dialog
  */
 class FreeCopyHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val prefs = context.prefs
         val classLoader = context.classLoader
 

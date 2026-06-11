@@ -8,11 +8,11 @@ import android.widget.TextView
 import io.github.bzzq.ModuleSettings
 
 class AutoLikeVideoDetailHook(
-    override val targetPackageName: String,
-) : AppHook {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
     private var lastClickAt = 0L
 
-    override fun install(context: HookContext) {
+    override fun startHook() {
         val prefs = context.prefs
 
         runCatching {

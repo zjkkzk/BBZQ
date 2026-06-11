@@ -10,10 +10,10 @@ import java.lang.reflect.Field
  * Re-implemented based on the functionality of the TQSA project.
  */
 class VideoFeatureUnlockHook(
-    override val targetPackageName: String,
-) : AppHook {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
 
-    override fun install(context: HookContext) {
+    override fun startHook() {
         val classLoader = context.classLoader
         val prefs = context.prefs
 

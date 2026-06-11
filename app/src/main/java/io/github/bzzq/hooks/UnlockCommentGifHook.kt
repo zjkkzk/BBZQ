@@ -8,9 +8,9 @@ import java.lang.reflect.Method
  * BRX-like unlock for comment GIF thumbnails in reply main/detail responses.
  */
 class UnlockCommentGifHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val prefs = context.prefs
         val classLoader = context.classLoader
 

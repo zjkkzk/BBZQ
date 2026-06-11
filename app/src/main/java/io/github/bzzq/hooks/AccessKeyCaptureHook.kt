@@ -6,9 +6,9 @@ import io.github.bzzq.ModuleSettings
  * Hook to capture access_key from Bilibili's internal storage or network responses.
  */
 class AccessKeyCaptureHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val classLoader = context.classLoader
         val prefs = context.prefs
 

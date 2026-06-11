@@ -2,9 +2,9 @@ package io.github.bzzq.hooks
 
 import io.github.bzzq.ModuleSettings
 class BlockLiveRoomQoeHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val gsonClass = runCatching {
             Class.forName(GSON_CLASS_NAME, false, context.classLoader)
         }.getOrElse {

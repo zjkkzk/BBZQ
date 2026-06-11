@@ -8,12 +8,12 @@ import org.json.JSONArray
 import java.lang.reflect.Modifier
 
 class LiveQualityHook(
-    override val targetPackageName: String,
-) : AppHook {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
     @Volatile
     private var nextQn: String = ""
 
-    override fun install(context: HookContext) {
+    override fun startHook() {
         val classLoader = context.classLoader
         val prefs = context.prefs
 

@@ -3,9 +3,9 @@ package io.github.bzzq.hooks
 import io.github.bzzq.ModuleSettings
 
 class BlockLiveReservationHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val classLoader = context.classLoader
         val prefs = context.prefs
 

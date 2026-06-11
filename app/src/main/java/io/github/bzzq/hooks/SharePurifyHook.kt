@@ -14,9 +14,9 @@ import io.github.libxposed.api.XposedInterface
  * strip tracking params from copied/shared URLs while keeping important location params.
  */
 class SharePurifyHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val prefs = context.prefs
         hookClipboardManager(context.xposed, prefs, context.log)
         hookActivityShareIntent(context.xposed, prefs, context.log)

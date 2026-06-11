@@ -10,9 +10,9 @@ import io.github.bzzq.ModuleSettings
  * Runtime fallback for BRX-like "make text selectable" behavior.
  */
 class SelectableTextHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val prefs = context.prefs
         runCatching {
             val activityClass = Activity::class.java

@@ -4,9 +4,9 @@ import io.github.bzzq.ModuleSettings
 import java.lang.reflect.Field
 
 class GsonSplashAdHook(
-    override val targetPackageName: String,
-) : AppHook {
-    override fun install(context: HookContext) {
+    targetPackageName: String,
+) : BaseHook(targetPackageName) {
+    override fun startHook() {
         val gsonClass = runCatching {
             Class.forName(GSON_CLASS_NAME, false, context.classLoader)
         }.getOrElse {
