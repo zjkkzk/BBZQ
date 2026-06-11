@@ -1,130 +1,122 @@
 package io.github.bzzq.hooks
 
-import android.content.SharedPreferences
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
-import java.lang.reflect.Field
+import java.lang.reflect.Method
 
-/**
- * Hook to unlock video features such as trial quality and VIP-only streams.
- * Re-implemented based on the functionality of the TQSA project.
- */
 class VideoFeatureUnlockHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
-
     override fun startHook() {
-        val classLoader = context.classLoader
-        val prefs = context.prefs
+        var hookCount = 0
 
-        hookSetBoolean(context.xposed, classLoader, SCENE_CONTROL_CLASS, SET_IS_NEED_TRIAL, true, prefs, context.log)
-        hookGetBoolean(context.xposed, classLoader, SCENE_CONTROL_CLASS, GET_IS_NEED_TRIAL, true, prefs, context.log)
+        hookCount += hookBooleanAccessors(
+            classNames = TRIAL_CLASSES,
+            falseMethods = setOf("getIsNeedTrial", "isNeedTrial", "getNeedTrial"),
+            trueMethods = emptySet(),
+        )
+        hookCount += hookBooleanSetters(
+            classNames = TRIAL_CLASSES,
+            setterNames = setOf("setIsNeedTrial", "setNeedTrial"),
+            forcedValue = false,
+        )
+        hookCount += hookBooleanAccessors(
+            classNames = STREAM_INFO_CLASSES,
+            falseMethods = setOf("getNeedVip", "isNeedVip"),
+            trueMethods = setOf("getVipFree", "isVipFree"),
+        )
+        hookCount += hookBooleanAccessors(
+            classNames = ARC_CONF_CLASSES,
+            falseMethods = setOf("getDisabled", "isDisabled"),
+            trueMethods = setOf("getIsSupport", "isSupport", "getSupport"),
+        )
+        hookCount += hookBooleanSetters(
+            classNames = ARC_CONF_CLASSES,
+            setterNames = setOf("setDisabled"),
+            forcedValue = false,
+        )
+        hookCount += hookBooleanSetters(
+            classNames = ARC_CONF_CLASSES,
+            setterNames = setOf("setIsSupport", "setSupport"),
+            forcedValue = true,
+        )
 
-        hookSetBoolean(context.xposed, classLoader, VIDEO_VOD_CLASS, SET_IS_NEED_TRIAL, true, prefs, context.log)
-        hookGetBoolean(context.xposed, classLoader, VIDEO_VOD_CLASS, GET_IS_NEED_TRIAL, true, prefs, context.log)
-
-        STREAM_INFO_CLASSES.forEach { className ->
-            hookRedirectFieldToMethod(context.xposed, classLoader, className, GET_VIP_FREE, NEED_VIP_FIELD, prefs, context.log)
-            hookGetBoolean(context.xposed, classLoader, className, GET_NEED_VIP, false, prefs, context.log)
-        }
+        log("Installed $hookCount video feature hook(s)")
     }
 
-    private fun hookGetBoolean(
-        xposed: XposedInterface,
-        cl: ClassLoader,
-        className: String,
-        methodName: String,
-        fixedValue: Boolean,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit
-    ) {
-        runCatching {
-            val clazz = Class.forName(className, false, cl)
-            val method = clazz.getDeclaredMethod(methodName)
-            xposed.hook(method).intercept { chain ->
-                if (ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)) fixedValue else chain.proceed()
+    private fun hookBooleanAccessors(
+        classNames: List<String>,
+        falseMethods: Set<String>,
+        trueMethods: Set<String>,
+    ): Int {
+        var count = 0
+        classNames.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { method ->
+                        method.parameterCount == 0 &&
+                            method.returnType == Boolean::class.javaPrimitiveType &&
+                            (method.name in falseMethods || method.name in trueMethods)
+                    }
+                    .forEach { method ->
+                        hookConstantBoolean(method, method.name in trueMethods)
+                        count++
+                    }
             }
-            log("Installed constant return hook: $className.$methodName() -> $fixedValue", null)
-        }.onFailure {
-            // Silently fail if class or method is not found
-        }
+        return count
     }
 
-    private fun hookSetBoolean(
-        xposed: XposedInterface,
-        cl: ClassLoader,
-        className: String,
-        methodName: String,
+    private fun hookBooleanSetters(
+        classNames: List<String>,
+        setterNames: Set<String>,
         forcedValue: Boolean,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit
-    ) {
-        runCatching {
-            val clazz = Class.forName(className, false, cl)
-            val method = clazz.getDeclaredMethod(methodName, Boolean::class.javaPrimitiveType)
-            xposed.hook(method).intercept { chain ->
-                if (ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)) {
-                    chain.proceed(arrayOf(forcedValue))
-                } else {
-                    chain.proceed()
-                }
+    ): Int {
+        var count = 0
+        classNames.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { method ->
+                        method.name in setterNames &&
+                            method.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType))
+                    }
+                    .forEach { method ->
+                        xposed.hook(method)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                            .intercept { chain ->
+                                if (ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)) {
+                                    chain.proceed(arrayOf<Any>(forcedValue))
+                                } else {
+                                    chain.proceed()
+                                }
+                            }
+                        count++
+                    }
             }
-            log("Installed argument force hook: $className.$methodName($forcedValue)", null)
-        }.onFailure {
-            // Silently fail
-        }
+        return count
     }
 
-    private fun hookRedirectFieldToMethod(
-        xposed: XposedInterface,
-        cl: ClassLoader,
-        className: String,
-        methodName: String,
-        fieldName: String,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit
-    ) {
-        runCatching {
-            val clazz = Class.forName(className, false, cl)
-            val method = clazz.getDeclaredMethod(methodName)
-            val field = findField(clazz, fieldName)?.apply { isAccessible = true } ?: return@runCatching
-            xposed.hook(method).intercept { chain ->
-                val instance = chain.thisObject
-                if (ModuleSettings.isUnlockVideoFeaturesEnabled(prefs) && instance != null) {
-                    field.get(instance)
-                } else {
-                    chain.proceed()
-                }
+    private fun hookConstantBoolean(method: Method, value: Boolean) {
+        xposed.hook(method)
+            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            .intercept { chain ->
+                if (ModuleSettings.isUnlockVideoFeaturesEnabled(prefs)) value else chain.proceed()
             }
-            log("Installed field redirection hook: $className.$methodName() -> field $fieldName", null)
-        }.onFailure {
-            // Silently fail
-        }
-    }
-
-    private fun findField(clazz: Class<*>, fieldName: String): Field? {
-        var current: Class<*>? = clazz
-        while (current != null) {
-            runCatching {
-                return current.getDeclaredField(fieldName)
-            }
-            current = current.superclass
-        }
-        return null
     }
 
     private companion object {
-        private const val SCENE_CONTROL_CLASS = "com.bapis.bilibili.pgc.gateway.player.v2.SceneControl"
-        private const val VIDEO_VOD_CLASS = "com.bapis.bilibili.playershared.VideoVod"
+        private val TRIAL_CLASSES = listOf(
+            "com.bapis.bilibili.pgc.gateway.player.v2.SceneControl",
+            "com.bapis.bilibili.playershared.VideoVod",
+        )
         private val STREAM_INFO_CLASSES = listOf(
             "com.bapis.bilibili.app.playurl.v1.StreamInfo",
-            "com.bapis.bilibili.playershared.StreamInfo"
+            "com.bapis.bilibili.playershared.StreamInfo",
         )
-
-        private const val SET_IS_NEED_TRIAL = "setIsNeedTrial"
-        private const val GET_IS_NEED_TRIAL = "getIsNeedTrial"
-        private const val GET_VIP_FREE = "getVipFree"
-        private const val GET_NEED_VIP = "getNeedVip"
-        private const val NEED_VIP_FIELD = "needVip_"
+        private val ARC_CONF_CLASSES = listOf(
+            "com.bapis.bilibili.playershared.ArcConf",
+            "com.bapis.bilibili.app.playerunite.v1.ArcConf",
+        )
     }
 }

@@ -1,42 +1,56 @@
 package io.github.bzzq.hooks
 
 import io.github.bzzq.ModuleSettings
+import io.github.libxposed.api.XposedInterface
 
 class BlockLiveReservationHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
     override fun startHook() {
-        val classLoader = context.classLoader
-        val prefs = context.prefs
-
-        runCatching {
-            val builderClass = Class.forName("com.bapis.bilibili.app.view.v1.ViewReply\$Builder", false, classLoader)
-            val buildMethod = builderClass.getDeclaredMethod("build")
-            context.xposed.hook(buildMethod).intercept { chain ->
-                val builder = chain.thisObject
-                if (builder != null && ModuleSettings.isBlockLiveReservationEnabled(prefs)) {
-                    runCatching {
-                        val clearMethod = builder.javaClass.getDeclaredMethod("clearLiveOrderInfo")
-                        clearMethod.invoke(builder)
+        var hookCount = 0
+        VIEW_REPLY_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { it.parameterCount == 0 && it.name == "hasLiveOrderInfo" }
+                    .forEach { method ->
+                        xposed.hook(method)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                            .intercept { chain ->
+                                if (ModuleSettings.isBlockLiveReservationEnabled(prefs)) false else chain.proceed()
+                            }
+                        hookCount++
                     }
-                }
-                chain.proceed()
             }
-            context.log("Installed ViewReply\$Builder.build() hook for block live reservation", null)
-        }
-        
-        runCatching {
-            val viewReplyClass = Class.forName("com.bapis.bilibili.app.view.v1.ViewReply", false, classLoader)
-            
-            val hasLiveOrderInfo = viewReplyClass.getDeclaredMethod("hasLiveOrderInfo")
-            context.xposed.hook(hasLiveOrderInfo).intercept { chain ->
-                if (ModuleSettings.isBlockLiveReservationEnabled(prefs)) {
-                    false
-                } else {
-                    chain.proceed()
-                }
+
+        VIEW_REPLY_BUILDER_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { it.name == "build" && it.parameterCount == 0 }
+                    .forEach { method ->
+                        xposed.hook(method)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                            .intercept { chain ->
+                                if (ModuleSettings.isBlockLiveReservationEnabled(prefs)) {
+                                    chain.thisObject?.let { builder ->
+                                        HostAccess.invoke(builder, "clearLiveOrderInfo")
+                                    }
+                                }
+                                chain.proceed()
+                            }
+                        hookCount++
+                    }
             }
-            context.log("Installed ViewReply.hasLiveOrderInfo() hook for block live reservation", null)
-        }
+
+        log("Installed $hookCount live reservation hook(s)")
+    }
+
+    private companion object {
+        private val VIEW_REPLY_CLASSES = listOf(
+            "com.bapis.bilibili.app.view.v1.ViewReply",
+            "com.bapis.bilibili.app.viewunite.v1.ViewReply",
+        )
+        private val VIEW_REPLY_BUILDER_CLASSES = VIEW_REPLY_CLASSES.map { "$it\$Builder" }
     }
 }

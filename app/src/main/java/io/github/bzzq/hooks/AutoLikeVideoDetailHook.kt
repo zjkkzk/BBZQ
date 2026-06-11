@@ -1,148 +1,192 @@
 package io.github.bzzq.hooks
 
 import android.app.Activity
-import android.content.SharedPreferences
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
+import io.github.libxposed.api.XposedInterface
+import java.lang.reflect.Method
+import java.util.Collections
+import java.util.WeakHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AutoLikeVideoDetailHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
-    private var lastClickAt = 0L
+    private val clickedViews = Collections.newSetFromMap(WeakHashMap<View, Boolean>())
+    private val componentHookInstalled = AtomicBoolean(false)
 
     override fun startHook() {
-        val prefs = context.prefs
+        val componentHooks = hookLikeComponent()
+        val lifecycleMethods = VIDEO_ACTIVITY_CLASSES
+            .mapNotNull { HostAccess.findClass(classLoader, it) }
+            .flatMap { type ->
+                listOfNotNull(
+                    HostAccess.method(type, listOf("onResume")) { it.parameterCount == 0 },
+                    HostAccess.method(type, listOf("onWindowFocusChanged")) {
+                        it.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType))
+                    },
+                )
+            }
+            .distinctBy { it.toGenericString() }
 
-        runCatching {
-            val onResume = Activity::class.java.getDeclaredMethod("onResume")
-            context.xposed.hook(onResume)
-                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
+        lifecycleMethods.forEach { method ->
+            xposed.hook(method)
+                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
-                    if (ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
-                        scheduleAutoLike(chain.getThisObject(), prefs, context.log)
+                    val focused = method.name != "onWindowFocusChanged" || chain.getArg(0) == true
+                    if (focused && ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
+                        (chain.thisObject as? Activity)?.let(::scheduleLike)
                     }
                     result
                 }
+        }
+        log(
+            "Installed auto-like hook: component=$componentHooks, " +
+                "lifecycle=${lifecycleMethods.size}",
+        )
+    }
 
-            val onWindowFocusChanged = Activity::class.java.getDeclaredMethod(
-                "onWindowFocusChanged",
-                Boolean::class.javaPrimitiveType,
-            )
-            context.xposed.hook(onWindowFocusChanged)
-                .setExceptionMode(io.github.libxposed.api.XposedInterface.ExceptionMode.PASSTHROUGH)
+    private fun hookLikeComponent(): Int {
+        val marker = HostMethodResolver(context).resolve(
+            cacheKey = "auto_like_component_marker",
+            fixedCandidates = { emptySequence() },
+            usingStrings = listOf("LikeClicked(view="),
+            validate = { true },
+        ) ?: return 0
+
+        var componentHost = marker.declaringClass
+        while (true) {
+            val outer = componentHost.declaringClass ?: break
+            componentHost = outer
+        }
+        val componentMapField = HostAccess.fields(componentHost)
+            .firstOrNull { Map::class.java.isAssignableFrom(it.type) }
+            ?: return 0
+
+        val constructors = componentHost.declaredConstructors.toList()
+        constructors.forEach { constructor ->
+            constructor.isAccessible = true
+            xposed.hook(constructor)
+                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
                 .intercept { chain ->
                     val result = chain.proceed()
-                    if (chain.getArg(0) == true && ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
-                        scheduleAutoLike(chain.getThisObject(), prefs, context.log)
+                    if (!componentHookInstalled.get()) {
+                        val host = chain.thisObject
+                        val map = host?.let {
+                            runCatching { componentMapField.get(it) as? Map<*, *> }.getOrNull()
+                        }
+                        val bindMethod = map?.keys
+                            ?.asSequence()
+                            ?.filterNotNull()
+                            ?.map(Any::javaClass)
+                            ?.distinct()
+                            ?.firstNotNullOfOrNull(::findLikeBindMethod)
+                        if (bindMethod != null && componentHookInstalled.compareAndSet(false, true)) {
+                            hookLikeBind(bindMethod)
+                        }
                     }
                     result
                 }
+        }
+        return constructors.size
+    }
 
-            context.log("Installed video detail auto-like hook for ${context.packageName}", null)
-        }.onFailure {
-            context.log("Failed to install video detail auto-like hook", it)
+    private fun findLikeBindMethod(type: Class<*>): Method? {
+        if (HostAccess.fields(type).none { Runnable::class.java.isAssignableFrom(it.type) }) {
+            return null
+        }
+        return HostAccess.methods(type).firstOrNull { method ->
+            method.returnType == Void.TYPE &&
+                method.parameterCount == 5 &&
+                method.parameterTypes[0] == type &&
+                LinearLayout::class.java.isAssignableFrom(method.parameterTypes[4])
         }
     }
 
-    private fun scheduleAutoLike(
-        target: Any?,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val activity = target as? Activity ?: return
-        if (!ModuleSettings.isAutoLikeVideoDetailEnabled(prefs) || !isVideoDetailActivity(activity)) return
-
-        val decor = activity.window?.decorView ?: return
-        SCAN_DELAYS_MS.forEach { delay ->
-            decor.postDelayed({
+    private fun hookLikeBind(method: Method) {
+        xposed.hook(method)
+            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            .intercept { chain ->
+                val result = chain.proceed()
                 if (ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) {
-                    clickLikeIfNeeded(activity, log)
+                    (chain.getArg(4) as? View)?.let(::scheduleLike)
                 }
+                result
+            }
+    }
+
+    private fun scheduleLike(activity: Activity) {
+        scheduleLike(activity.window?.decorView ?: return)
+    }
+
+    private fun scheduleLike(root: View) {
+        SCAN_DELAYS.forEach { delay ->
+            root.postDelayed({
+                if (!ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) return@postDelayed
+                val likeView = findLikeView(root) ?: return@postDelayed
+                if (likeView in clickedViews || isLiked(likeView)) return@postDelayed
+                if (performClick(likeView)) clickedViews += likeView
             }, delay)
         }
     }
 
-    private fun clickLikeIfNeeded(activity: Activity, log: (String, Throwable?) -> Unit) {
-        val likeView = findLikeView(activity) ?: return
-        if (hasRecentlyClicked() || hasLikedState(likeView)) return
-
-        likeView.post {
-            if (hasRecentlyClicked() || hasLikedState(likeView)) return@post
-            if (performClick(likeView)) {
-                lastClickAt = System.currentTimeMillis()
-                log("Clicked video detail like button in ${activity.javaClass.name}", null)
+    private fun findLikeView(root: View): View? {
+        LIKE_VIEW_IDS.forEach { name ->
+            val id = root.resources.getIdentifier(name, "id", root.context.packageName)
+            if (id != 0) root.findViewById<View>(id)?.let { return it }
+        }
+        return findView(root) { view ->
+            val text = when (view) {
+                is TextView -> view.text?.toString().orEmpty()
+                else -> view.contentDescription?.toString().orEmpty()
             }
+            text == "点赞" || text.contains("点赞视频")
         }
     }
 
-    private fun findLikeView(activity: Activity): View? {
-        val decor = activity.window?.decorView ?: return null
-        LIKE_VIEW_ID_NAMES.forEach { name ->
-            val id = activity.resources.getIdentifier(name, "id", activity.packageName)
-            if (id != 0) {
-                decor.findViewById<View>(id)?.let { return it }
-            }
-        }
-        return null
-    }
-
-    private fun hasLikedState(root: View): Boolean {
-        var visitedCount = 0
-        fun visit(view: View?): Boolean {
-            if (view == null || visitedCount++ > MAX_VIEW_SCAN_NODES) return false
-            if (view.isSelected || view.isActivated) return true
-            if (containsLikedText(view.contentDescription)) return true
-            if (view is TextView && containsLikedText(view.text)) return true
-
-            val group = view as? ViewGroup ?: return false
-            for (index in 0 until group.childCount) {
-                if (visit(group.getChildAt(index))) return true
-            }
-            return false
-        }
-        return visit(root)
-    }
-
-    private fun containsLikedText(text: CharSequence?): Boolean {
-        val compact = text?.toString()?.replace(" ", "") ?: return false
-        return LIKED_TEXT_MARKERS.any { marker -> compact.contains(marker) }
+    private fun isLiked(view: View): Boolean {
+        if (view.isSelected || view.isActivated) return true
+        val markers = listOf("已点赞", "取消点赞", "已赞")
+        return findView(view) { candidate ->
+            candidate.isSelected ||
+                candidate.isActivated ||
+                markers.any { marker ->
+                    candidate.contentDescription?.contains(marker) == true ||
+                        (candidate as? TextView)?.text?.contains(marker) == true
+                }
+        } != null
     }
 
     private fun performClick(view: View): Boolean {
         if (!view.isShown || !view.isEnabled) return false
         if (view.isClickable || view.hasOnClickListeners()) return view.callOnClick()
-
-        val parent = view.parent as? View
-        return parent != null &&
-            parent.isShown &&
+        val parent = view.parent as? View ?: return false
+        return parent.isShown &&
             parent.isEnabled &&
             (parent.isClickable || parent.hasOnClickListeners()) &&
             parent.callOnClick()
     }
 
-    private fun hasRecentlyClicked(): Boolean {
-        return System.currentTimeMillis() - lastClickAt < CLICK_COOLDOWN_MS
-    }
-
-    private fun isVideoDetailActivity(activity: Activity): Boolean {
-        val className = activity.javaClass.name
-        return VIDEO_DETAIL_ACTIVITY_NAME_PARTS.any { className.contains(it) }
+    private fun findView(root: View, predicate: (View) -> Boolean): View? {
+        if (predicate(root)) return root
+        val group = root as? ViewGroup ?: return null
+        for (index in 0 until group.childCount) {
+            findView(group.getChildAt(index), predicate)?.let { return it }
+        }
+        return null
     }
 
     private companion object {
-        private val VIDEO_DETAIL_ACTIVITY_NAME_PARTS = listOf(
-            "UnitedBizDetailsActivity",
-            "VideoDetailsActivity",
-            "VideoDetailActivity",
-            "VideoDetailPageActivity",
+        private val VIDEO_ACTIVITY_CLASSES = listOf(
+            "com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity",
+            "tv.danmaku.bili.ui.video.VideoDetailsActivity",
+            "com.bilibili.video.story.StoryVideoActivity",
         )
-        private val LIKE_VIEW_ID_NAMES = listOf("frame_like", "like_layout")
-        private val LIKED_TEXT_MARKERS = listOf("已点赞", "已赞", "取消点赞")
-        private val SCAN_DELAYS_MS = longArrayOf(300L, 900L, 1600L, 2600L)
-        private const val CLICK_COOLDOWN_MS = 10_000L
-        private const val MAX_VIEW_SCAN_NODES = 120
+        private val LIKE_VIEW_IDS = listOf("frame_like", "like_layout")
+        private val SCAN_DELAYS = longArrayOf(100L, 350L, 900L, 1800L)
     }
 }

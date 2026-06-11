@@ -1,215 +1,192 @@
 package io.github.bzzq.hooks
 
-import android.content.SharedPreferences
 import android.net.Uri
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
 import org.json.JSONArray
+import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 class LiveQualityHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
     @Volatile
-    private var nextQn: String = ""
+    private var selectedQn = DEFAULT_QN.toString()
 
     override fun startHook() {
-        val classLoader = context.classLoader
-        val prefs = context.prefs
+        val resolver = HostMethodResolver(context)
+        val selector = resolver.resolve(
+            cacheKey = "live_quality_selector",
+            fixedCandidates = {
+                LIVE_SELECTOR_CLASSES.asSequence()
+                    .mapNotNull { HostAccess.findClass(classLoader, it) }
+                    .flatMap(HostAccess::methods)
+            },
+            searchPackages = listOf("com.bilibili.bililive"),
+            usingStrings = listOf("LiveUrlSelectorData(playUrl="),
+            validate = ::isSelectorMethod,
+        )
+        selector?.let(::hookSelector)
 
-        hookSelectorUri(context.xposed, classLoader, prefs, context.log)
-        hookHttpUrlParse(context.xposed, classLoader, prefs, context.log)
-    }
-
-    private fun hookSelectorUri(
-        xposed: XposedInterface,
-        classLoader: ClassLoader,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val selectorClasses = LIVE_PLAY_URL_SELECT_UTIL_CLASS_NAMES.mapNotNull { className ->
-            runCatching { Class.forName(className, false, classLoader) }.getOrNull()
-        }
-        if (selectorClasses.isEmpty()) {
-            log("Live play URL selector class not found", null)
-            return
-        }
-
-        var hookCount = 0
-        selectorClasses.forEach { selectorClass ->
-            selectorClass.declaredMethods
-                .filter { method -> method.parameterTypes.contentEquals(arrayOf(Uri::class.java)) }
-                .forEach { method ->
-                    method.isAccessible = true
-                    xposed.hook(method)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                        .intercept { chain ->
-                            if (!ModuleSettings.isFixLiveQualityUrlEnabled(prefs)) {
-                                return@intercept chain.proceed()
-                            }
-
-                            val originalUri = chain.getArg(0) as? Uri
-                                ?: return@intercept chain.proceed()
-                            val newUri = rewriteLiveSelectorUri(originalUri)
-                                ?: return@intercept chain.proceed()
-                            chain.proceed(arrayOf<Any>(newUri))
-                        }
-                    hookCount++
-                }
-        }
-
-        if (hookCount > 0) {
-            log("Installed live selector URL hook(s): $hookCount", null)
+        val interceptor = resolver.resolve(
+            cacheKey = "live_quality_interceptor",
+            fixedCandidates = { emptySequence() },
+            searchPackages = listOf("com.bilibili", "tv.danmaku.bili"),
+            usingStrings = listOf("inject common param to body failure"),
+            validate = ::isRequestInterceptor,
+        )
+        if (interceptor != null) {
+            hookRequestInterceptor(interceptor)
         } else {
-            log("Live selector URL method not found", null)
+            hookHttpUrlFallback()
         }
+
+        log(
+            "Installed live quality hook: selector=${selector?.declaringClass?.name ?: "missing"}, " +
+                "interceptor=${interceptor?.declaringClass?.name ?: "HttpUrl fallback"}",
+        )
     }
 
-    private fun hookHttpUrlParse(
-        xposed: XposedInterface,
-        classLoader: ClassLoader,
-        prefs: SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        val httpUrlClasses = HTTP_URL_CLASS_NAMES.mapNotNull { className ->
-            runCatching { Class.forName(className, false, classLoader) }.getOrNull()
-        }
-        if (httpUrlClasses.isEmpty()) {
-            log("HttpUrl class not found for live quality hook", null)
-            return
-        }
+    private fun hookSelector(method: Method) {
+        xposed.hook(method)
+            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            .intercept { chain ->
+                if (!ModuleSettings.isFixLiveQualityUrlEnabled(prefs)) return@intercept chain.proceed()
+                val uri = chain.getArg(0) as? Uri ?: return@intercept chain.proceed()
+                val rewritten = rewriteSelectorUri(uri) ?: return@intercept chain.proceed()
+                chain.proceed(arrayOf<Any>(rewritten))
+            }
+    }
 
-        var hookCount = 0
-        httpUrlClasses.forEach { httpUrlClass ->
-            httpUrlClass.declaredMethods
-                .filter { method ->
-                    Modifier.isStatic(method.modifiers) &&
-                        method.parameterTypes.contentEquals(arrayOf(String::class.java)) &&
-                        httpUrlClass.isAssignableFrom(method.returnType)
+    private fun hookRequestInterceptor(method: Method) {
+        xposed.hook(method)
+            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            .intercept { chain ->
+                if (ModuleSettings.isFixLiveQualityUrlEnabled(prefs)) {
+                    chain.getArg(0)?.let(::rewriteRequestUrl)
                 }
-                .forEach { method ->
-                    method.isAccessible = true
-                    xposed.hook(method)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                        .intercept { chain ->
-                            if (!ModuleSettings.isFixLiveQualityUrlEnabled(prefs)) {
-                                return@intercept chain.proceed()
+                chain.proceed()
+            }
+    }
+
+    private fun hookHttpUrlFallback() {
+        HTTP_URL_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { httpUrlClass ->
+                HostAccess.methods(httpUrlClass)
+                    .filter { method ->
+                        Modifier.isStatic(method.modifiers) &&
+                            method.parameterTypes.contentEquals(arrayOf(String::class.java)) &&
+                            httpUrlClass.isAssignableFrom(method.returnType)
+                    }
+                    .forEach { method ->
+                        xposed.hook(method)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                            .intercept { chain ->
+                                if (!ModuleSettings.isFixLiveQualityUrlEnabled(prefs)) {
+                                    return@intercept chain.proceed()
+                                }
+                                val original = chain.getArg(0) as? String ?: return@intercept chain.proceed()
+                                val rewritten = rewriteRoomPlayInfoUrl(original) ?: return@intercept chain.proceed()
+                                chain.proceed(arrayOf<Any>(rewritten))
                             }
-
-                            val url = chain.getArg(0) as? String
-                                ?: return@intercept chain.proceed()
-                            val newUrl = rewriteRoomPlayInfoUrl(url)
-                                ?: return@intercept chain.proceed()
-                            chain.proceed(arrayOf<Any>(newUrl))
-                        }
-                    hookCount++
-                }
-        }
-
-        if (hookCount > 0) {
-            log("Installed live room play info URL hook(s): $hookCount", null)
-        } else {
-            log("HttpUrl parse method not found for live quality hook", null)
-        }
+                    }
+            }
     }
 
-    private fun rewriteLiveSelectorUri(originalUri: Uri): Uri? {
-        if (!originalUri.isLiveRoomUrl()) return null
+    private fun rewriteRequestUrl(request: Any) {
+        val urlField = HostAccess.fields(request.javaClass)
+            .firstOrNull { it.type.name.endsWith("HttpUrl") }
+            ?: return
+        val oldUrl = runCatching { urlField.get(request)?.toString() }.getOrNull() ?: return
+        val newUrl = rewriteRoomPlayInfoUrl(oldUrl) ?: return
+        val parseMethod = HostAccess.methods(urlField.type).firstOrNull { method ->
+            Modifier.isStatic(method.modifiers) &&
+                method.parameterTypes.contentEquals(arrayOf(String::class.java)) &&
+                urlField.type.isAssignableFrom(method.returnType)
+        } ?: return
+        val parsed = runCatching { parseMethod.invoke(null, newUrl) }.getOrNull() ?: return
+        runCatching { urlField.set(request, parsed) }
+    }
 
-        if (originalUri.getQueryParameter(NO_PLAYURL_QUERY) == "1") {
-            nextQn = PREFERRED_LIVE_QN.toString()
+    private fun rewriteSelectorUri(uri: Uri): Uri? {
+        if (!uri.isLiveRoom()) return null
+        if (uri.getQueryParameter("no_playurl") == "1") {
+            selectedQn = DEFAULT_QN.toString()
             return null
         }
 
-        val acceptQuality = originalUri.getQueryParameter(ACCEPT_QUALITY_QUERY)
-            ?: return null
-        nextQn = runCatching {
-            findQuality(JSONArray(acceptQuality), PREFERRED_LIVE_QN).toString()
-        }.getOrDefault(PREFERRED_LIVE_QN.toString())
-
-        return originalUri.modified(
-            removeIf = { name -> name.startsWith(PLAYURL_QUERY_PREFIX) },
-            append = mapOf(NO_PLAYURL_QUERY to "1"),
-        )
-    }
-
-    private fun rewriteRoomPlayInfoUrl(url: String): String? {
-        if (!url.startsWith(ROOM_PLAY_INFO_URL_PREFIX)) return null
-
-        val originalUri = Uri.parse(url)
-        val qn = originalUri.getQueryParameter(QN_QUERY)
-        if (!qn.isNullOrEmpty() && qn != "0") return null
-
-        var hasQn = false
-        val builder = originalUri.buildUpon().clearQuery()
-        originalUri.queryParameterNames.forEach { name ->
-            val value = if (name == QN_QUERY) {
-                hasQn = true
-                nextQn.ifEmpty { PREFERRED_LIVE_QN.toString() }
-            } else {
-                originalUri.getQueryParameter(name) ?: ""
-            }
-            builder.appendQueryParameter(name, value)
-        }
-        if (!hasQn) {
-            builder.appendQueryParameter(QN_QUERY, nextQn.ifEmpty { PREFERRED_LIVE_QN.toString() })
-        }
-        return builder.build().toString()
-    }
-
-    private fun Uri.isLiveRoomUrl(): Boolean {
-        return scheme in arrayOf("http", "https") &&
-            host == "live.bilibili.com" &&
-            pathSegments.firstOrNull()?.all { it.isDigit() } == true
-    }
-
-    private fun Uri.modified(removeIf: (String) -> Boolean, append: Map<String, Any>): Uri {
-        val builder = buildUpon().clearQuery()
-        queryParameterNames.forEach { name ->
-            if (!removeIf(name)) {
-                builder.appendQueryParameter(name, getQueryParameter(name) ?: "")
+        val accepted = uri.getQueryParameter("accept_quality")
+        selectedQn = accepted?.let(::selectQuality)?.toString() ?: DEFAULT_QN.toString()
+        val builder = uri.buildUpon().clearQuery()
+        uri.queryParameterNames.forEach { name ->
+            if (!name.startsWith("playurl")) {
+                builder.appendQueryParameter(name, uri.getQueryParameter(name).orEmpty())
             }
         }
-        append.forEach { (name, value) ->
-            builder.appendQueryParameter(name, value.toString())
-        }
+        builder.appendQueryParameter("no_playurl", "1")
         return builder.build()
     }
 
-    private fun findQuality(acceptQuality: JSONArray, expectQuality: Int): Int {
-        val acceptQnList = buildList {
-            for (index in 0 until acceptQuality.length()) {
-                add(acceptQuality.optInt(index))
-            }
-        }.filter { it > 0 }.sorted()
-        if (acceptQnList.isEmpty()) return expectQuality
+    private fun rewriteRoomPlayInfoUrl(url: String): String? {
+        if (!url.startsWith(ROOM_PLAY_INFO_PREFIX)) return null
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+        val currentQn = uri.getQueryParameter("qn")
+        if (!currentQn.isNullOrEmpty() && currentQn != "0") return null
 
-        val max = acceptQnList.last()
-        val min = acceptQnList.first()
-        return when {
-            expectQuality > max -> max
-            expectQuality < min -> min
-            else -> acceptQnList.first { it >= expectQuality }
+        val builder = uri.buildUpon().clearQuery()
+        var foundQn = false
+        uri.queryParameterNames.forEach { name ->
+            val value = if (name == "qn") {
+                foundQn = true
+                selectedQn
+            } else {
+                uri.getQueryParameter(name).orEmpty()
+            }
+            builder.appendQueryParameter(name, value)
         }
+        if (!foundQn) builder.appendQueryParameter("qn", selectedQn)
+        return builder.build().toString()
     }
 
-    private companion object {
-        private const val ROOM_PLAY_INFO_URL_PREFIX =
-            "https://api.live.bilibili.com/xlive/app-room/v2/index/getRoomPlayInfo?"
-        private const val ACCEPT_QUALITY_QUERY = "accept_quality"
-        private const val NO_PLAYURL_QUERY = "no_playurl"
-        private const val PLAYURL_QUERY_PREFIX = "playurl"
-        private const val QN_QUERY = "qn"
-        private const val PREFERRED_LIVE_QN = 10000
+    private fun selectQuality(json: String): Int {
+        val accepted = runCatching {
+            val array = JSONArray(json)
+            buildList {
+                for (index in 0 until array.length()) {
+                    array.optInt(index).takeIf { it > 0 }?.let(::add)
+                }
+            }.sorted()
+        }.getOrDefault(emptyList())
+        if (accepted.isEmpty()) return DEFAULT_QN
+        return accepted.firstOrNull { it >= DEFAULT_QN } ?: accepted.last()
+    }
 
-        private val LIVE_PLAY_URL_SELECT_UTIL_CLASS_NAMES = listOf(
+    private fun Uri.isLiveRoom(): Boolean =
+        scheme in setOf("http", "https") &&
+            host == "live.bilibili.com" &&
+            pathSegments.firstOrNull()?.all(Char::isDigit) == true
+
+    private fun isSelectorMethod(method: Method): Boolean =
+        method.parameterTypes.contentEquals(arrayOf(Uri::class.java)) &&
+            method.returnType != Void.TYPE &&
+            method.declaringClass.name.contains("bililive")
+
+    private fun isRequestInterceptor(method: Method): Boolean =
+        method.parameterCount == 1 &&
+            method.returnType == method.parameterTypes[0] &&
+            method.returnType != Void.TYPE
+
+    private companion object {
+        private const val DEFAULT_QN = 10000
+        private const val ROOM_PLAY_INFO_PREFIX =
+            "https://api.live.bilibili.com/xlive/app-room/v2/index/getRoomPlayInfo?"
+        private val LIVE_SELECTOR_CLASSES = listOf(
             "com.bilibili.bililive.room.ui.roomv3.player.LivePlayUrlSelectUtil",
             "com.bilibili.bililive.room.ui.roomv3.player.playurl.LivePlayUrlSelectUtil",
             "com.bilibili.bililive.room.ui.roomv3.player.selector.LivePlayUrlSelectUtil",
-            "com.bilibili.bililive.room.ui.roomv3.player.url.LivePlayUrlSelectUtil",
         )
-
-        private val HTTP_URL_CLASS_NAMES = listOf(
+        private val HTTP_URL_CLASSES = listOf(
             "okhttp3.HttpUrl",
             "com.bilibili.lib.okhttp.HttpUrl",
         )

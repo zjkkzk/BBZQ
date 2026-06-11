@@ -1,48 +1,63 @@
 package io.github.bzzq.hooks
 
-import android.content.SharedPreferences
 import io.github.bzzq.ModuleSettings
-/**
- * Hook to capture access_key from Bilibili's internal storage or network responses.
- */
+import io.github.libxposed.api.XposedInterface
+import java.lang.reflect.Method
+
 class AccessKeyCaptureHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
     override fun startHook() {
-        val classLoader = context.classLoader
-        val prefs = context.prefs
-
-        // Capture from Token info
-        runCatching {
-            val tokenClass = Class.forName("com.bilibili.nativelibrary.BiliBiliToken", false, classLoader)
-            val getAccessToken = tokenClass.getDeclaredMethod("getAccessToken")
-            context.xposed.hook(getAccessToken).intercept { chain ->
-                val token = chain.proceed() as? String
-                if (!token.isNullOrEmpty()) {
-                    saveAccessKey(prefs, token)
-                }
-                token
+        val methods = mutableSetOf<Method>()
+        TOKEN_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { it.parameterCount == 0 && it.returnType == String::class.java }
+                    .filterTo(methods) {
+                        it.name.contains("access", true) || it.name.contains("token", true)
+                    }
             }
+
+        val accountMarker = HostMethodResolver(context).resolve(
+            cacheKey = "bili_accounts_marker",
+            fixedCandidates = { emptySequence() },
+            usingStrings = listOf("logout with account exception"),
+            validate = { true },
+        )
+        accountMarker?.declaringClass?.let { accountClass ->
+            HostAccess.methods(accountClass)
+                .filter { it.parameterCount == 0 && it.returnType == String::class.java }
+                .forEach(methods::add)
         }
 
-        // Also try to capture from common storage classes if they exist
-        runCatching {
-            val loginHelperClass = Class.forName("com.bilibili.lib.login.model.AccessToken", false, classLoader)
-            val getAccessToken = loginHelperClass.getDeclaredMethod("getAccessToken")
-            context.xposed.hook(getAccessToken).intercept { chain ->
-                val token = chain.proceed() as? String
-                if (!token.isNullOrEmpty()) {
-                    saveAccessKey(prefs, token)
+        methods.forEach { method ->
+            xposed.hook(method)
+                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                .intercept { chain ->
+                    val result = chain.proceed()
+                    (result as? String)?.takeIf(::looksLikeAccessKey)?.let(::save)
+                    result
                 }
-                token
-            }
+        }
+        log("Installed access_key capture on ${methods.size} method(s)")
+    }
+
+    private fun looksLikeAccessKey(value: String): Boolean =
+        value.length in 24..128 &&
+            value.none(Char::isWhitespace) &&
+            value.any(Char::isDigit) &&
+            value.any(Char::isLetter)
+
+    private fun save(value: String) {
+        if (prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null) != value) {
+            prefs.edit().putString(ModuleSettings.KEY_LAST_ACCESS_KEY, value).apply()
         }
     }
 
-    private fun saveAccessKey(prefs: SharedPreferences, token: String) {
-        val lastKey = prefs.getString(ModuleSettings.KEY_LAST_ACCESS_KEY, null)
-        if (lastKey != token) {
-            prefs.edit().putString(ModuleSettings.KEY_LAST_ACCESS_KEY, token).apply()
-        }
+    private companion object {
+        private val TOKEN_CLASSES = listOf(
+            "com.bilibili.nativelibrary.BiliBiliToken",
+            "com.bilibili.lib.login.model.AccessToken",
+        )
     }
 }

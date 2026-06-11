@@ -6,258 +6,269 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.text.SpannableStringBuilder
 import android.text.method.LinkMovementMethod
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
 import org.json.JSONObject
+import java.lang.reflect.Method
 
-/**
- * BiliRoamingX-like copy behavior:
- * - disable original long-press copy
- * - optionally replace it with a selectable dialog
- */
 class FreeCopyHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
     override fun startHook() {
-        val prefs = context.prefs
-        val classLoader = context.classLoader
-
-        hookCommentCopyMenus(context.xposed, classLoader, prefs, context.log)
-        hookConversationCopy(context.xposed, classLoader, prefs, context.log)
-        hookDescCopy(context.xposed, classLoader, prefs, context.log)
+        var count = hookCommentMenu()
+        count += hookLongClickSources()
+        count += hookConversation()
+        log("Installed $count copy behavior hook(s)")
     }
 
-    private fun hookCommentCopyMenus(
-        xposed: XposedInterface,
-        classLoader: ClassLoader,
-        prefs: android.content.SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        COPY_MENU_HOLDER_CLASS_NAMES.forEach { className ->
-            runCatching {
-                val clazz = Class.forName(className, false, classLoader)
-                val candidates = clazz.declaredMethods.filter { method ->
-                    method.parameterTypes.size >= 3 &&
-                        View::class.java.isAssignableFrom(method.parameterTypes.last())
-                }
-                if (candidates.isEmpty()) return@runCatching
-
-                candidates.forEach { method ->
-                    method.isAccessible = true
-                    xposed.hook(method)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                        .intercept { chain ->
-                            val disableOriginalCopy = ModuleSettings.isDisableLongPressCopyEnabled(prefs)
-                            if (!disableOriginalCopy) return@intercept chain.proceed()
-
-                            val menu = chain.getArg(1)
-                            val triggerView = chain.getArg(method.parameterTypes.size - 1) as? View
-                            if (!looksLikeCopyAction(menu, triggerView)) return@intercept chain.proceed()
-
-                            if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
-                                log("Consumed default comment copy action", null)
-                                return@intercept null
-                            }
-
-                            val result = chain.proceed()
-                            val text = readClipboardText(triggerView?.context) ?: return@intercept result
-                            showSelectableDialog(triggerView?.context, text, log)
-                            result
-                        }
-                }
-                log("Installed free-copy menu hook for $className", null)
-            }.onFailure {
-                log("Failed to install free-copy menu hook for $className", it)
+    private fun hookCommentMenu(): Int {
+        val holder = HostAccess.findClass(classLoader, COMMENT_MENU_HOLDER) ?: return 0
+        val methods = HostAccess.methods(holder)
+            .filter { method ->
+                method.parameterTypes.any { View::class.java.isAssignableFrom(it) } &&
+                    method.parameterTypes.any { it.name.contains("MenuItem") }
             }
-        }
-    }
+            .toList()
 
-    private fun hookConversationCopy(
-        xposed: XposedInterface,
-        classLoader: ClassLoader,
-        prefs: android.content.SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        runCatching {
-            val clazz = Class.forName(CONVERSATION_ACTIVITY_CLASS_NAME, false, classLoader)
-            val methods = clazz.declaredMethods.filter { it.parameterTypes.size == 8 }
-            methods.forEach { method ->
-                method.isAccessible = true
-                xposed.hook(method)
-                    .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                    .intercept { chain ->
-                        if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
-                            return@intercept chain.proceed()
-                        }
-
-                        val activity = chain.thisObject as? Activity ?: return@intercept chain.proceed()
-                        val message = chain.getArg(1) ?: return@intercept chain.proceed()
-                        val popupWindow = chain.getArg(6)
-                        val action = chain.getArg(7)?.toString().orEmpty()
-                        if (!action.contains("COPY", ignoreCase = true)) {
-                            return@intercept chain.proceed()
-                        }
-
-                        val text = extractConversationText(message) ?: return@intercept chain.proceed()
-                        showSelectableDialog(activity, text, log)
-                        dismissPopupWindow(popupWindow)
-                        null
+        methods.forEach { method ->
+            xposed.hook(method)
+                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                .intercept { chain ->
+                    if (!ModuleSettings.isDisableLongPressCopyEnabled(prefs)) {
+                        return@intercept chain.proceed()
                     }
-            }
-            log("Installed conversation free-copy hook", null)
-        }.onFailure {
-            log("Failed to install conversation free-copy hook", it)
+                    val menuArg = method.parameterTypes.indices
+                        .firstOrNull { method.parameterTypes[it].name.contains("MenuItem") }
+                        ?.let(chain::getArg)
+                    if (menuArg?.toString()?.contains("COPY", true) != true) {
+                        return@intercept chain.proceed()
+                    }
+
+                    if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
+                        return@intercept defaultValue(method.returnType)
+                    }
+
+                    val result = chain.proceed()
+                    val view = method.parameterTypes.indices
+                        .firstOrNull { View::class.java.isAssignableFrom(method.parameterTypes[it]) }
+                        ?.let { chain.getArg(it) as? View }
+                    val text = readClipboard(view?.context) ?: findText(view)
+                    if (!text.isNullOrBlank()) showCopyDialog(view?.context, text)
+                    result
+                }
         }
+        return methods.size
     }
 
-    private fun hookDescCopy(
-        xposed: XposedInterface,
-        classLoader: ClassLoader,
-        prefs: android.content.SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        DESC_COPY_CLASS_NAMES.forEach { className ->
-            runCatching {
-                val clazz = Class.forName(className, false, classLoader)
-                clazz.declaredMethods
+    private fun hookLongClickSources(): Int {
+        var count = 0
+        LONG_CLICK_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
                     .filter { method ->
-                        method.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType, String::class.java))
+                        method.name == "onLongClick" &&
+                            method.parameterTypes.contentEquals(arrayOf(View::class.java))
                     }
                     .forEach { method ->
-                        method.isAccessible = true
                         xposed.hook(method)
                             .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
                             .intercept { chain ->
-                                if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
+                                if (!ModuleSettings.isDisableLongPressCopyEnabled(prefs)) {
                                     return@intercept chain.proceed()
                                 }
-                                val context = findContext(chain.thisObject) ?: return@intercept chain.proceed()
-                                val text = chain.getArg(1) as? String ?: return@intercept chain.proceed()
-                                if (text.isBlank()) return@intercept chain.proceed()
-                                showSelectableDialog(context, text, log)
-                                null
+                                if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
+                                    return@intercept true
+                                }
+                                val view = chain.getArg(0) as? View
+                                val text = findText(view) ?: findTextOnTarget(chain.thisObject)
+                                if (!text.isNullOrBlank()) showCopyDialog(view?.context, text)
+                                true
                             }
+                        count++
                     }
-                log("Installed desc free-copy hook for $className", null)
-            }.onFailure {
-                log("Failed to install desc free-copy hook for $className", it)
+            }
+
+        DESC_COPY_CLASSES.mapNotNull { HostAccess.findClass(classLoader, it) }
+            .distinct()
+            .forEach { type ->
+                HostAccess.methods(type)
+                    .filter { method ->
+                        method.parameterTypes.any { View::class.java.isAssignableFrom(it) } &&
+                            method.parameterTypes.any { it.name == "android.text.style.ClickableSpan" }
+                    }
+                    .forEach { method ->
+                        xposed.hook(method)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                            .intercept { chain ->
+                                if (!ModuleSettings.isDisableLongPressCopyEnabled(prefs)) {
+                                    return@intercept chain.proceed()
+                                }
+                                if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
+                                    return@intercept defaultValue(method.returnType)
+                                }
+                                val view = method.parameterTypes.indices
+                                    .firstOrNull { View::class.java.isAssignableFrom(method.parameterTypes[it]) }
+                                    ?.let { chain.getArg(it) as? View }
+                                val text = findTextOnTarget(chain.thisObject) ?: findText(view)
+                                if (!text.isNullOrBlank()) showCopyDialog(view?.context, text)
+                                defaultValue(method.returnType)
+                            }
+                        count++
+                    }
+            }
+        return count
+    }
+
+    private fun hookConversation(): Int {
+        val activityClass = HostAccess.findClass(classLoader, CONVERSATION_ACTIVITY) ?: return 0
+        val methods = HostAccess.methods(activityClass)
+            .filter { it.parameterCount == 8 }
+            .toList()
+        methods.forEach { method ->
+            xposed.hook(method)
+                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+                .intercept { chain ->
+                    if (!ModuleSettings.isEnhanceLongPressCopyEnabled(prefs)) {
+                        return@intercept chain.proceed()
+                    }
+                    val action = chain.getArg(7)?.toString().orEmpty()
+                    if (!action.contains("COPY", true) && chain.getArg(7) != chain.getArg(0)) {
+                        return@intercept chain.proceed()
+                    }
+                    val activity = chain.thisObject as? Activity ?: return@intercept chain.proceed()
+                    val message = chain.getArg(1) ?: return@intercept chain.proceed()
+                    val text = extractMessageText(message) ?: return@intercept chain.proceed()
+                    showCopyDialog(activity, text)
+                    HostAccess.invoke(chain.getArg(6) ?: return@intercept null, "dismiss")
+                    null
+                }
+        }
+        return methods.size
+    }
+
+    private fun findText(view: View?): CharSequence? {
+        if (view is TextView && !view.text.isNullOrBlank()) return view.text
+        val group = view as? ViewGroup ?: return null
+        COPYABLE_VIEW_IDS.forEach { name ->
+            val id = group.resources.getIdentifier(name, "id", group.context.packageName)
+            if (id != 0) {
+                (group.findViewById<View>(id) as? TextView)?.text?.takeIf { it.isNotBlank() }?.let { return it }
             }
         }
-    }
-
-    private fun findContext(target: Any?): Context? {
-        when (target) {
-            is Context -> return target
-            null -> return null
+        for (index in 0 until group.childCount) {
+            findText(group.getChildAt(index))?.let { return it }
         }
-        return runCatching {
-            target.javaClass.declaredFields.firstOrNull { Context::class.java.isAssignableFrom(it.type) }
-                ?.apply { isAccessible = true }
-                ?.get(target) as? Context
-        }.getOrNull()
+        return null
     }
 
-    private fun dismissPopupWindow(popupWindow: Any?) {
-        runCatching {
-            popupWindow?.javaClass?.getMethod("dismiss")?.invoke(popupWindow)
-        }
+    private fun findTextOnTarget(target: Any?): CharSequence? {
+        if (target == null) return null
+        return HostAccess.fields(target.javaClass)
+            .mapNotNull { field -> runCatching { field.get(target) }.getOrNull() }
+            .firstNotNullOfOrNull { value ->
+                when (value) {
+                    is SpannableStringBuilder -> value
+                    is CharSequence -> value.takeIf { it.isNotBlank() }
+                    else -> null
+                }
+            }
     }
 
-    private fun extractConversationText(message: Any): String? {
-        val contentString = runCatching {
-            message.javaClass.methods.firstOrNull { it.name == "getContentString" && it.parameterCount == 0 }
-                ?.invoke(message) as? String
-        }.getOrNull() ?: return null
-
+    private fun extractMessageText(message: Any): String? {
+        val raw = HostAccess.invoke(message, "getContentString") as? String ?: return null
         return runCatching {
-            val json = JSONObject(contentString)
-            json.optString("content").ifEmpty {
-                buildString {
-                    appendLine(json.optString("title").trim())
-                    appendLine(json.optString("text").trim())
+            val json = JSONObject(raw)
+            json.optString("content").ifBlank {
+                buildList {
+                    json.optString("title").takeIf(String::isNotBlank)?.let(::add)
+                    json.optString("text").takeIf(String::isNotBlank)?.let(::add)
                     json.optJSONArray("modules")?.let { modules ->
                         for (index in 0 until modules.length()) {
                             val item = modules.optJSONObject(index) ?: continue
-                            appendLine("${item.optString("title")}：${item.optString("detail")}")
+                            add(listOf(item.optString("title"), item.optString("detail"))
+                                .filter(String::isNotBlank)
+                                .joinToString("："))
                         }
                     }
-                }.trim()
+                }.joinToString("\n")
             }
         }.getOrNull()
     }
 
-    private fun looksLikeCopyAction(menu: Any?, view: View?): Boolean {
-        val menuText = menu?.toString().orEmpty()
-        if (menuText.contains("COPY", ignoreCase = true) || menuText.contains("复制")) return true
-
-        return containsText(view) {
-            it.contains("复制") || it.contains("拷贝")
-        }
-    }
-
-    private fun containsText(view: View?, predicate: (String) -> Boolean): Boolean {
-        if (view == null) return false
-        if (view is TextView) {
-            val text = view.text?.toString().orEmpty()
-            if (predicate(text)) return true
-        }
-        val group = view as? android.view.ViewGroup ?: return false
-        for (index in 0 until group.childCount) {
-            if (containsText(group.getChildAt(index), predicate)) return true
-        }
-        return false
-    }
-
-    private fun readClipboardText(context: Context?): CharSequence? {
+    private fun readClipboard(context: Context?): CharSequence? {
         val clipboard = context?.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
-        val clipData: ClipData = clipboard.primaryClip ?: return null
-        if (clipData.itemCount == 0) return null
-        return clipData.getItemAt(0).coerceToText(context)?.takeIf { it.isNotBlank() }
+        return clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.takeIf { it.isNotBlank() }
     }
 
-    private fun showSelectableDialog(context: Context?, text: CharSequence, log: (String, Throwable?) -> Unit) {
+    private fun showCopyDialog(context: Context?, text: CharSequence) {
         val activity = context as? Activity ?: return
         activity.runOnUiThread {
-            runCatching {
-                val dialog = AlertDialog.Builder(activity)
-                    .setTitle("自由复制内容")
-                    .setMessage(text)
-                    .setPositiveButton("分享") { _, _ ->
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, text.toString())
-                        }
-                        activity.startActivity(Intent.createChooser(intent, "分享"))
+            val dialog = AlertDialog.Builder(activity)
+                .setTitle("自由复制内容")
+                .setMessage(text)
+                .setPositiveButton("分享") { _, _ ->
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, text.toString())
                     }
-                    .setNeutralButton("复制全部") { _, _ ->
-                        val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("bzzq_free_copy", text))
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
-                dialog.findViewById<TextView>(android.R.id.message)?.apply {
-                    setTextIsSelectable(true)
-                    movementMethod = LinkMovementMethod.getInstance()
+                    activity.startActivity(Intent.createChooser(intent, "分享文本"))
                 }
-            }.onFailure {
-                log("Failed to show free-copy dialog", it)
+                .setNeutralButton("复制全部") { _, _ ->
+                    val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("bzzq_copy", text))
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            dialog.findViewById<TextView>(android.R.id.message)?.apply {
+                setTextIsSelectable(true)
+                movementMethod = LinkMovementMethod.getInstance()
             }
         }
     }
 
+    private fun defaultValue(type: Class<*>): Any? = when (type) {
+        Boolean::class.javaPrimitiveType -> false
+        Byte::class.javaPrimitiveType -> 0.toByte()
+        Short::class.javaPrimitiveType -> 0.toShort()
+        Int::class.javaPrimitiveType -> 0
+        Long::class.javaPrimitiveType -> 0L
+        Float::class.javaPrimitiveType -> 0f
+        Double::class.javaPrimitiveType -> 0.0
+        Char::class.javaPrimitiveType -> '\u0000'
+        else -> null
+    }
+
     private companion object {
-        private val COPY_MENU_HOLDER_CLASS_NAMES = listOf(
-            "com.bilibili.app.comment3.ui.widget.menu.CommentMoreMenuItemHolder",
-        )
-        private const val CONVERSATION_ACTIVITY_CLASS_NAME =
+        private const val COMMENT_MENU_HOLDER =
+            "com.bilibili.app.comment3.ui.widget.menu.CommentMoreMenuItemHolder"
+        private const val CONVERSATION_ACTIVITY =
             "com.bilibili.bplus.im.conversation.ConversationActivity"
-        private val DESC_COPY_CLASS_NAMES = listOf(
+        private val LONG_CLICK_CLASSES = listOf(
+            "com.bilibili.app.comm.comment2.widget.CommentExpandableTextView\$OnLongClickListener",
+            "com.bilibili.app.comment3.ui.widget.CommentLongClickListener",
+        )
+        private val DESC_COPY_CLASSES = listOf(
             "tv.danmaku.bili.ui.video.section.info.VideoDescCopyHelper",
             "com.bilibili.video.story.StoryTextCopyHelper",
             "com.bilibili.app.comm.comment2.helper.TextCopyHelper",
+        )
+        private val COPYABLE_VIEW_IDS = listOf(
+            "message",
+            "comment_message",
+            "dy_card_text",
+            "dy_opus_paragraph_desc",
+            "dy_opus_paragraph_title",
+            "dy_opus_paragraph_text",
         )
     }
 }

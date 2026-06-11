@@ -1,187 +1,111 @@
 package io.github.bzzq.hooks
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Intent
 import android.net.Uri
-import android.os.Bundle
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
 
-/**
- * Lightweight share purification inspired by BR/BRX:
- * strip tracking params from copied/shared URLs while keeping important location params.
- */
 class SharePurifyHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
     override fun startHook() {
-        val prefs = context.prefs
-        hookClipboardManager(context.xposed, prefs, context.log)
-        hookActivityShareIntent(context.xposed, prefs, context.log)
+        var count = hookShareResult()
+        count += hookClipboardFallback()
+        log("Installed $count share purification hook(s)")
     }
 
-    private fun hookClipboardManager(
-        xposed: XposedInterface,
-        prefs: android.content.SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        runCatching {
-            val setPrimaryClip = ClipboardManager::class.java.getDeclaredMethod("setPrimaryClip", ClipData::class.java)
-            xposed.hook(setPrimaryClip)
-                .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
-                .intercept { chain ->
-                    if (!ModuleSettings.isPurifyShareEnabled(prefs)) {
-                        return@intercept chain.proceed()
-                    }
-
-                    val originalClip = chain.getArg(0) as? ClipData ?: return@intercept chain.proceed()
-                    val sanitized = sanitizeClipData(originalClip)
-                    if (sanitized != null) {
-                        return@intercept chain.proceed(arrayOf<Any>(sanitized))
-                    }
-                    chain.proceed()
-                }
-            log("Installed share-purify clipboard hook", null)
-        }.onFailure {
-            log("Failed to install share-purify clipboard hook", it)
-        }
-    }
-
-    private fun hookActivityShareIntent(
-        xposed: XposedInterface,
-        prefs: android.content.SharedPreferences,
-        log: (String, Throwable?) -> Unit,
-    ) {
-        runCatching {
-            val activityClass = Activity::class.java
-            val startActivity = activityClass.getDeclaredMethod("startActivity", Intent::class.java)
-            val startActivityWithBundle = activityClass.getDeclaredMethod("startActivity", Intent::class.java, Bundle::class.java)
-
-            listOf(startActivity, startActivityWithBundle).forEach { method ->
+    private fun hookShareResult(): Int {
+        val shareResult = HostAccess.findClass(
+            classLoader,
+            "com.bilibili.lib.sharewrapper.online.api.ShareClickResult",
+        ) ?: return 0
+        var count = 0
+        HostAccess.methods(shareResult)
+            .filter {
+                it.parameterCount == 0 &&
+                    it.returnType == String::class.java &&
+                    it.name in setOf("getLink", "getContent")
+            }
+            .forEach { method ->
                 xposed.hook(method)
                     .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
                     .intercept { chain ->
-                        if (!ModuleSettings.isPurifyShareEnabled(prefs)) {
-                            return@intercept chain.proceed()
+                        val rawResult = chain.proceed()
+                        val result = rawResult as? String ?: return@intercept rawResult
+                        if (!ModuleSettings.isPurifyShareEnabled(prefs)) return@intercept result
+                        val purified = purifyText(result)
+                        chain.thisObject?.let { target ->
+                            val field = if (method.name == "getLink") "link" else "content"
+                            HostAccess.set(target, purified, field)
                         }
-
-                        val originalIntent = chain.getArg(0) as? Intent ?: return@intercept chain.proceed()
-                        val sanitizedIntent = sanitizeIntent(originalIntent) ?: return@intercept chain.proceed()
-                        val args = Array(method.parameterTypes.size) { index ->
-                            if (index == 0) sanitizedIntent else chain.getArg(index)
-                        }
-                        chain.proceed(args)
+                        purified
                     }
+                count++
             }
-            log("Installed share-purify intent hook", null)
-        }.onFailure {
-            log("Failed to install share-purify intent hook", it)
-        }
+        return count
     }
 
-    private fun sanitizeClipData(clipData: ClipData): ClipData? {
-        if (clipData.itemCount == 0) return null
-        val item = clipData.getItemAt(0)
-        val text = item.text?.toString() ?: return null
-        val sanitizedText = sanitizeText(text)
-        if (sanitizedText == text) return null
-        return ClipData.newPlainText(clipData.description?.label ?: "text", sanitizedText)
-    }
-
-    private fun sanitizeIntent(intent: Intent): Intent? {
-        val action = intent.action ?: return null
-        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE && action != Intent.ACTION_CHOOSER) {
-            return null
-        }
-
-        var changed = false
-        val cloned = Intent(intent)
-
-        val text = cloned.getStringExtra(Intent.EXTRA_TEXT)
-        if (!text.isNullOrBlank()) {
-            val sanitizedText = sanitizeText(text)
-            if (sanitizedText != text) {
-                cloned.putExtra(Intent.EXTRA_TEXT, sanitizedText)
-                changed = true
+    private fun hookClipboardFallback(): Int {
+        val method = ClipboardManager::class.java.getDeclaredMethod("setPrimaryClip", ClipData::class.java)
+        xposed.hook(method)
+            .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+            .intercept { chain ->
+                if (!ModuleSettings.isPurifyShareEnabled(prefs)) return@intercept chain.proceed()
+                val clip = chain.getArg(0) as? ClipData ?: return@intercept chain.proceed()
+                val text = clip.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                    ?: return@intercept chain.proceed()
+                val purified = purifyText(text)
+                if (purified == text) {
+                    chain.proceed()
+                } else {
+                    chain.proceed(arrayOf<Any>(ClipData.newPlainText(clip.description.label, purified)))
+                }
             }
-        }
-
-        val data = cloned.data
-        if (data != null) {
-            val sanitizedData = sanitizeUri(data)
-            if (sanitizedData != data) {
-                cloned.data = sanitizedData
-                changed = true
-            }
-        }
-
-        return cloned.takeIf { changed }
+        return 1
     }
 
-    private fun sanitizeText(text: String): String {
-        return URL_REGEX.replace(text) { match ->
-            val original = match.value
-            val (body, suffix) = splitTrailingPunctuation(original)
-            sanitizeUrl(body) + suffix
-        }
+    private fun purifyText(text: String): String = URL_REGEX.replace(text) { match ->
+        val raw = match.value
+        val suffix = raw.takeLastWhile { it in TRAILING_PUNCTUATION }
+        val url = raw.dropLast(suffix.length)
+        purifyUrl(url) + suffix
     }
 
-    private fun splitTrailingPunctuation(text: String): Pair<String, String> {
-        var splitIndex = text.length
-        while (splitIndex > 0 && text[splitIndex - 1] in TRAILING_PUNCTUATION) {
-            splitIndex--
-        }
-        return text.substring(0, splitIndex) to text.substring(splitIndex)
-    }
-
-    private fun sanitizeUrl(url: String): String {
+    private fun purifyUrl(url: String): String {
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return url
-        val sanitizedUri = sanitizeUri(uri)
-        return sanitizedUri.toString()
-    }
-
-    private fun sanitizeUri(uri: Uri): Uri {
         val host = uri.host.orEmpty()
-        if (!host.contains("bilibili.com") && !host.contains("b23.tv")) return uri
-        if (host.contains("b23.tv")) return uri
+        if (!host.endsWith("bilibili.com") && host !in SHORT_LINK_HOSTS) return url
+        if (host in SHORT_LINK_HOSTS) {
+            return uri.buildUpon().clearQuery().fragment(null).build().toString()
+        }
 
         val builder = uri.buildUpon().clearQuery()
         uri.queryParameterNames.forEach { name ->
+            if (name !in KEPT_QUERY_NAMES) return@forEach
             val value = uri.getQueryParameter(name).orEmpty()
-            if (!shouldKeepQuery(name, value)) return@forEach
-            builder.appendQueryParameter(name, value)
+            if (value.isNotEmpty() && !(name == "p" && value == "1")) {
+                builder.appendQueryParameter(name, value)
+            }
         }
-
-        val fragment = uri.fragment.orEmpty()
-        if (fragment.startsWith("reply")) {
-            builder.fragment(fragment)
-        } else {
-            builder.encodedFragment(null)
-        }
-        return builder.build()
+        builder.fragment(uri.fragment?.takeIf { it.startsWith("reply") })
+        return builder.build().toString()
     }
-
-    private fun shouldKeepQuery(name: String, value: String): Boolean {
-        val rule = WHITELIST_QUERIES.firstOrNull { it.name == name } ?: return false
-        return value.isNotEmpty() && value !in rule.ignoredValues
-    }
-
-    private data class WhitelistQuery(val name: String, val ignoredValues: Set<String> = emptySet())
 
     private companion object {
         private val URL_REGEX = Regex("""https?://\S+""")
-        private val TRAILING_PUNCTUATION = setOf(')', '）', '】', '>', '»', ',', '.', ';', '!', '?', '，', '。', '；')
-        private val WHITELIST_QUERIES = listOf(
-            WhitelistQuery("start_progress"),
-            WhitelistQuery("p", setOf("1")),
-            WhitelistQuery("topic_id"),
-            WhitelistQuery("comment_on"),
-            WhitelistQuery("comment_root_id"),
-            WhitelistQuery("comment_secondary_id"),
-            WhitelistQuery("type"),
-            WhitelistQuery("itemsId"),
+        private val SHORT_LINK_HOSTS = setOf("b23.tv", "bili2233.cn")
+        private val KEPT_QUERY_NAMES = setOf(
+            "start_progress",
+            "t",
+            "p",
+            "topic_id",
+            "comment_on",
+            "comment_root_id",
+            "comment_secondary_id",
+            "type",
+            "itemsId",
         )
+        private val TRAILING_PUNCTUATION = setOf(')', '）', ']', '】', '>', '》', ',', '，', '.', '。', ';', '；', '!', '！', '?', '？')
     }
 }
