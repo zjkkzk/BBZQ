@@ -129,7 +129,13 @@ class AutoLikeVideoDetailHook(
                 if (!ModuleSettings.isAutoLikeVideoDetailEnabled(prefs)) return@postDelayed
                 val likeView = findLikeView(root) ?: return@postDelayed
                 if (likeView in clickedViews || isLiked(likeView)) return@postDelayed
-                if (performClick(likeView)) clickedViews += likeView
+                if (AutoLikeState.hasDetail() && !AutoLikeState.canClick()) return@postDelayed
+                if (performClick(likeView)) {
+                    clickedViews += likeView
+                    if (AutoLikeState.hasDetail()) {
+                        AutoLikeState.markClicked()
+                    }
+                }
             }, delay)
         }
     }

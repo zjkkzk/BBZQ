@@ -50,15 +50,31 @@ class StoryVideoAdHook(
         val before = items.size
         items.removeAll { item ->
             if (item == null) return@removeAll false
-            if ("ad" in selectedTags && HostAccess.getBoolean(item, "ad", "isAd") == true) {
+            if ("ad" in selectedTags && isStoryAd(item)) {
                 return@removeAll true
             }
-            val cart = HostAccess.get(item, "cartIconInfo") ?: return@removeAll false
-            val entryText = HostAccess.get(cart, "entryText")?.toString() ?: return@removeAll false
+            val entryText = readCartEntryText(item) ?: return@removeAll false
             selectedTags.any { key -> tags[key]?.cartText == entryText }
         }
         val removed = before - items.size
         if (removed > 0) incrementBlockedCount(prefs, removed)
+    }
+
+    private fun isStoryAd(item: Any): Boolean =
+        (runCatching {
+            item.javaClass.getDeclaredMethod("isAd").apply { isAccessible = true }.invoke(item)
+        }.getOrNull() as? Boolean)
+            ?: (HostAccess.getBoolean(item, "ad", "isAd") == true)
+
+    private fun readCartEntryText(item: Any): String? {
+        val cart = runCatching {
+            item.javaClass.getDeclaredMethod("getCartIconInfo").apply { isAccessible = true }.invoke(item)
+        }.getOrNull() ?: HostAccess.get(item, "cartIconInfo")
+        if (cart == null) return null
+        return runCatching {
+            cart.javaClass.getDeclaredMethod("getEntryText").apply { isAccessible = true }.invoke(cart) as? String
+        }.getOrNull()
+            ?: HostAccess.get(cart, "entryText")?.toString()
     }
 
     private fun incrementBlockedCount(prefs: SharedPreferences, count: Int) {

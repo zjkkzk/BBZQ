@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.net.Uri
 import io.github.bzzq.ModuleSettings
 import io.github.libxposed.api.XposedInterface
+import java.net.HttpURLConnection
+import java.net.URL
 
 class SharePurifyHook(
     targetPackageName: String,
@@ -34,7 +36,11 @@ class SharePurifyHook(
                         val rawResult = chain.proceed()
                         val result = rawResult as? String ?: return@intercept rawResult
                         if (!ModuleSettings.isPurifyShareEnabled(prefs)) return@intercept result
-                        val purified = purifyText(result)
+                        val purified = if (method.name == "getLink") {
+                            purifyLink(result)
+                        } else {
+                            purifyText(result)
+                        }
                         chain.thisObject?.let { target ->
                             val field = if (method.name == "getLink") "link" else "content"
                             HostAccess.set(target, purified, field)
@@ -69,43 +75,68 @@ class SharePurifyHook(
         val raw = match.value
         val suffix = raw.takeLastWhile { it in TRAILING_PUNCTUATION }
         val url = raw.dropLast(suffix.length)
-        purifyUrl(url) + suffix
+        transformUrl(resolveShortLink(url)) + suffix
     }
 
-    private fun purifyUrl(url: String): String {
+    private fun purifyLink(url: String): String =
+        transformUrl(resolveShortLink(url))
+
+    private fun transformUrl(url: String): String {
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return url
         val host = uri.host.orEmpty()
         if (!host.endsWith("bilibili.com") && host !in SHORT_LINK_HOSTS) return url
-        if (host in SHORT_LINK_HOSTS) {
-            return uri.buildUpon().clearQuery().fragment(null).build().toString()
-        }
 
         val builder = uri.buildUpon().clearQuery()
-        uri.queryParameterNames.forEach { name ->
-            if (name !in KEPT_QUERY_NAMES) return@forEach
-            val value = uri.getQueryParameter(name).orEmpty()
-            if (value.isNotEmpty() && !(name == "p" && value == "1")) {
-                builder.appendQueryParameter(name, value)
+        uri.encodedQuery
+            ?.split("&")
+            ?.mapNotNull { segment ->
+                val parts = segment.split("=", limit = 2)
+                if (parts.size != 2) null else parts[0] to parts[1]
             }
+            ?.forEach { (name, value) ->
+                when (name) {
+                    "p", "t" -> builder.appendQueryParameter(name, value)
+                    "start_progress" -> {
+                        builder.appendQueryParameter("start_progress", value)
+                        value.toLongOrNull()?.let { millis ->
+                            builder.appendQueryParameter("t", (millis / 1000).toString())
+                        }
+                    }
+                }
+            }
+        if (uri.getQueryParameter("unique_k").isNullOrEmpty()) {
+            builder.appendQueryParameter("unique_k", "2333")
         }
-        builder.fragment(uri.fragment?.takeIf { it.startsWith("reply") })
-        return builder.build().toString()
+        return builder.fragment(null).build().toString()
+    }
+
+    private fun resolveShortLink(url: String): String {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return url
+        if (uri.host !in SHORT_LINK_HOSTS) return url
+        val requestUrl = uri.buildUpon().query(null).fragment(null).build().toString()
+        return runCatching {
+            (URL(requestUrl).openConnection() as HttpURLConnection).run {
+                requestMethod = "GET"
+                instanceFollowRedirects = false
+                connectTimeout = 5000
+                readTimeout = 5000
+                connect()
+                when (responseCode) {
+                    HttpURLConnection.HTTP_MOVED_TEMP,
+                    HttpURLConnection.HTTP_MOVED_PERM,
+                    307,
+                    308,
+                    -> getHeaderField("Location") ?: url
+
+                    else -> url
+                }
+            }
+        }.getOrDefault(url)
     }
 
     private companion object {
         private val URL_REGEX = Regex("""https?://\S+""")
         private val SHORT_LINK_HOSTS = setOf("b23.tv", "bili2233.cn")
-        private val KEPT_QUERY_NAMES = setOf(
-            "start_progress",
-            "t",
-            "p",
-            "topic_id",
-            "comment_on",
-            "comment_root_id",
-            "comment_secondary_id",
-            "type",
-            "itemsId",
-        )
-        private val TRAILING_PUNCTUATION = setOf(')', '）', ']', '】', '>', '》', ',', '，', '.', '。', ';', '；', '!', '！', '?', '？')
+        private val TRAILING_PUNCTUATION = setOf(')', ']', '>', ',', '.', ';', '!', '?')
     }
 }

@@ -8,6 +8,36 @@ import java.lang.reflect.Modifier
 class HostResponseHook(
     targetPackageName: String,
 ) : BaseHook(targetPackageName) {
+    private val processors = listOf(
+        Processor(SPLASH_LIST_CLASSES) { result ->
+            if (ModuleSettings.isSkipSplashAdEnabled(prefs)) {
+                clearMutableList(result, "adList")
+                clearMutableList(result, "showList")
+                clearMutableList(result, "splashList")
+                clearMutableList(result, "strategyList")
+            }
+        },
+        Processor(SPLASH_SHOW_CLASSES) { result ->
+            if (ModuleSettings.isSkipSplashAdEnabled(prefs)) {
+                clearMutableList(result, "showList")
+                clearMutableList(result, "strategyList")
+            }
+        },
+        Processor(setOf(LIVE_ROOM_USER_INFO_CLASS)) { result ->
+            if (ModuleSettings.isBlockLiveRoomQoePopupEnabled(prefs)) {
+                HostAccess.clear(result, "qoe")
+            }
+        },
+        Processor(REPLY_ADD_RESPONSE_CLASSES) { result ->
+            if (ModuleSettings.isUnlockCommentGifEnabled(prefs)) {
+                unlockPostedReply(result)
+            }
+        },
+        Processor(VIEW_REPLY_CLASSES) { result ->
+            captureAutoLikeDetail(result)
+        },
+    )
+
     override fun startHook() {
         val parserMethods = buildList {
             addAll(findGsonParsers())
@@ -57,29 +87,23 @@ class HostResponseHook(
 
     private fun dispatch(rawResult: Any?) {
         val result = unwrap(rawResult) ?: return
-        when (result.javaClass.name) {
-            in SPLASH_LIST_CLASSES -> {
-                if (!ModuleSettings.isSkipSplashAdEnabled(prefs)) return
-                processSplashList(result)
-            }
+        processors.firstOrNull { result.javaClass.name in it.targetClassNames }
+            ?.action
+            ?.invoke(result)
+    }
 
-            in SPLASH_SHOW_CLASSES -> {
-                if (!ModuleSettings.isSkipSplashAdEnabled(prefs)) return
-                processSplashShow(result)
-            }
-
-            LIVE_ROOM_USER_INFO_CLASS -> {
-                if (ModuleSettings.isBlockLiveRoomQoePopupEnabled(prefs)) {
-                    HostAccess.clear(result, "qoe")
-                }
-            }
-
-            in REPLY_ADD_RESPONSE_CLASSES -> {
-                if (ModuleSettings.isUnlockCommentGifEnabled(prefs)) {
-                    unlockPostedReply(result)
-                }
-            }
+    private fun captureAutoLikeDetail(result: Any) {
+        val reqUser = HostAccess.get(result, "reqUser", "req_user") ?: return
+        val like = when (val value = HostAccess.get(reqUser, "like")) {
+            is Number -> value.toInt()
+            is Boolean -> if (value) 1 else 0
+            else -> return
         }
+        val aid = HostAccess.getLong(result, "aid")
+            ?: HostAccess.get(result, "arc")?.let { HostAccess.getLong(it, "aid") }
+            ?: HostAccess.get(result, "archive")?.let { HostAccess.getLong(it, "aid") }
+            ?: return
+        AutoLikeState.update(aid, like)
     }
 
     private fun unwrap(result: Any?): Any? {
@@ -97,18 +121,6 @@ class HostResponseHook(
 
     private fun clearMutableList(target: Any, fieldName: String) {
         HostAccess.asMutableList(HostAccess.get(target, fieldName))?.clear()
-    }
-
-    private fun processSplashList(target: Any) {
-        clearMutableList(target, "adList")
-        clearMutableList(target, "showList")
-        clearMutableList(target, "splashList")
-        clearMutableList(target, "strategyList")
-    }
-
-    private fun processSplashShow(target: Any) {
-        clearMutableList(target, "showList")
-        clearMutableList(target, "strategyList")
     }
 
     private fun unlockPostedReply(response: Any) {
@@ -129,6 +141,11 @@ class HostResponseHook(
         }
     }
 
+    private data class Processor(
+        val targetClassNames: Set<String>,
+        val action: (Any) -> Unit,
+    )
+
     private companion object {
         private val FAST_JSON_PARSE_METHODS = setOf("parse", "parseObject")
         private val SPLASH_LIST_CLASSES = setOf(
@@ -146,6 +163,10 @@ class HostResponseHook(
         private val REPLY_ADD_RESPONSE_CLASSES = setOf(
             "com.bilibili.app.comment3.data.model.ReplyAddResponse",
             "com.bilibili.app.comm.comment2.model.ReplyAddResponse",
+        )
+        private val VIEW_REPLY_CLASSES = setOf(
+            "com.bapis.bilibili.app.view.v1.ViewReply",
+            "com.bapis.bilibili.app.viewunite.v1.ViewReply",
         )
     }
 }
