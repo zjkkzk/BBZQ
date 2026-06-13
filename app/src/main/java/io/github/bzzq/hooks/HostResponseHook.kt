@@ -60,13 +60,12 @@ class HostResponseHook(
         when (result.javaClass.name) {
             in SPLASH_LIST_CLASSES -> {
                 if (!ModuleSettings.isSkipSplashAdEnabled(prefs)) return
-                clearMutableList(result, "splashList")
-                clearMutableList(result, "strategyList")
+                processSplashList(result)
             }
 
             in SPLASH_SHOW_CLASSES -> {
                 if (!ModuleSettings.isSkipSplashAdEnabled(prefs)) return
-                clearMutableList(result, "strategyList")
+                processSplashShow(result)
             }
 
             LIVE_ROOM_USER_INFO_CLASS -> {
@@ -100,6 +99,18 @@ class HostResponseHook(
         HostAccess.asMutableList(HostAccess.get(target, fieldName))?.clear()
     }
 
+    private fun processSplashList(target: Any) {
+        clearMutableList(target, "adList")
+        clearMutableList(target, "showList")
+        clearMutableList(target, "splashList")
+        clearMutableList(target, "strategyList")
+    }
+
+    private fun processSplashShow(target: Any) {
+        clearMutableList(target, "showList")
+        clearMutableList(target, "strategyList")
+    }
+
     private fun unlockPostedReply(response: Any) {
         val data = HostAccess.get(response, "data") ?: return
         val successAction = HostAccess.getLong(data, "success_action", "successAction")
@@ -127,6 +138,7 @@ class HostResponseHook(
         )
         private val SPLASH_SHOW_CLASSES = setOf(
             "tv.danmaku.bili.splash.ad.model.SplashShowResponse",
+            "tv.danmaku.bili.ui.splash.ShowSplashData",
             "tv.danmaku.bili.ui.splash.ad.model.SplashShowData",
         )
         private const val LIVE_ROOM_USER_INFO_CLASS =
