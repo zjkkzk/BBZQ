@@ -34,6 +34,9 @@ class SettingsContentFactory(
         page.addView(createSectionLabel("分享与链接"))
         page.addView(createSectionCard(shareRows()))
 
+        page.addView(createSectionLabel("启动净化"))
+        page.addView(createSectionCard(startupRows()))
+
         page.addView(createSectionLabel("播放净化"))
         page.addView(createSectionCard(playbackRows()))
 
@@ -66,6 +69,17 @@ class SettingsContentFactory(
                 "不再以小程序方式分享到 QQ 或微信，同时复制分享链接时尽量转换为 av 号。",
                 ModuleSettings.KEY_MINI_PROGRAM_ENABLED,
                 false,
+            ),
+        )
+    }
+
+    private fun startupRows(): List<View> {
+        return listOf(
+            createSwitchRow(
+                "跳过开屏广告",
+                "清理启动时的开屏广告响应，减少进入 BBZQ 作用目标时的等待。",
+                ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED,
+                true,
             ),
         )
     }

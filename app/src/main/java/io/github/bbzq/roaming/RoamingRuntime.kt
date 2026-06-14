@@ -6,6 +6,7 @@ import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.roaming.hook.RewardAdHook
 import io.github.bbzq.roaming.hook.SettingHook
 import io.github.bbzq.roaming.hook.ShareHook
+import io.github.bbzq.roaming.hook.SplashAdHook
 import io.github.bbzq.roaming.hook.StoryPlayerAdHook
 import io.github.libxposed.api.XposedInterface
 
@@ -39,6 +40,7 @@ object RoamingRuntime {
 
             else -> listOf(
                 ::SettingHook,
+                ::SplashAdHook,
                 ::ShareHook,
                 ::StoryPlayerAdHook,
                 ::RewardAdHook,
