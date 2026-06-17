@@ -14,6 +14,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     private val cacheLock = Any()
     private var localCache: Map<String, Any> = emptyMap()
     private var lastLoadTime = 0L
+    private var providerUnavailable = false
 
     private fun ensureLoaded() {
         val now = System.currentTimeMillis()
@@ -29,8 +30,8 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
     private fun getAllFromSources(): Map<String, Any?> =
         getAllFromRemotePreferences().ifEmpty {
-            getAllFromProvider().ifEmpty {
-                getAllFromXSharedPreferences().ifEmpty { fallbackDefaults() }
+            getAllFromXSharedPreferences().ifEmpty {
+                getAllFromProvider().ifEmpty { fallbackDefaults() }
             }
         }
 
@@ -39,7 +40,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
             resolveRemotePreferences()?.all.orEmpty()
         }.mapCatching { prefs ->
             prefs.mapValues { it.value }.also {
-                if (it.isNotEmpty()) lastProviderStatus = "remote ok"
+                lastProviderStatus = if (it.isEmpty()) "remote empty" else "remote ok"
             }
         }.getOrElse {
             lastProviderStatus = "remote ${it.javaClass.simpleName}: ${it.message}"
@@ -47,6 +48,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
     private fun getAllFromProvider(): Map<String, Any?> {
+        if (providerUnavailable) return emptyMap()
         val result = call(ModuleSettingsProvider.METHOD_GET_ALL, null, null)
         val values = result?.keySet()?.associateWith { key -> result.get(key) }.orEmpty()
         return values
@@ -78,6 +80,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     override fun getString(key: String?, defValue: String?): String? {
         ensureLoaded()
         return synchronized(cacheLock) { localCache[key] as? String } ?: run {
+            if (providerUnavailable) return defValue
             val result = call(
                 ModuleSettingsProvider.METHOD_GET_STRING,
                 key,
@@ -96,6 +99,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
             else -> null
         }
         if (cachedSet != null) return cachedSet
+        if (providerUnavailable) return defValues
 
         val result = call(
             ModuleSettingsProvider.METHOD_GET_STRING_SET,
@@ -111,6 +115,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     override fun getInt(key: String?, defValue: Int): Int {
         ensureLoaded()
         return (synchronized(cacheLock) { localCache[key] } as? Number)?.toInt() ?: run {
+            if (providerUnavailable) return defValue
             val result = call(
                 ModuleSettingsProvider.METHOD_GET_INT,
                 key,
@@ -141,6 +146,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     override fun getBoolean(key: String?, defValue: Boolean): Boolean {
         ensureLoaded()
         return (synchronized(cacheLock) { localCache[key] } as? Boolean) ?: run {
+            if (providerUnavailable) return defValue
             val result = call(
                 ModuleSettingsProvider.METHOD_GET_BOOLEAN,
                 key,
@@ -153,6 +159,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     override fun contains(key: String?): Boolean {
         ensureLoaded()
         if (synchronized(cacheLock) { localCache.containsKey(key) }) return true
+        if (providerUnavailable) return false
         val result = call(ModuleSettingsProvider.METHOD_CONTAINS, key, null)
         return result?.getBoolean(ModuleSettingsProvider.EXTRA_VALUE, false) ?: false
     }
@@ -171,12 +178,15 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         val resolver = resolveContentResolver() ?: return null
         return try {
             resolver.call(ModuleSettingsProvider.CONTENT_URI, method, arg, extras).also {
+                providerUnavailable = false
                 lastProviderStatus = if (it == null) "$method returned null" else "$method ok"
             }
         } catch (e: IllegalArgumentException) {
+            providerUnavailable = true
             lastProviderStatus = "$method IllegalArgumentException: ${e.message}"
             null
         } catch (e: SecurityException) {
+            providerUnavailable = true
             lastProviderStatus = "$method SecurityException: ${e.message}"
             null
         }
@@ -198,7 +208,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
     private fun resolveRemotePreferences(): SharedPreferences? {
         cachedRemotePrefs.get()?.let { return it }
-        val xposed = cachedXposed.get() ?: return null
+        val xposed = cachedXposed ?: return null
         return runCatching {
             xposed.getRemotePreferences(ModuleSettings.PREFS_NAME)
         }.getOrNull()?.also {
@@ -327,7 +337,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         private const val CACHE_EXPIRATION = 5000L
         private const val MODULE_PACKAGE = "io.github.bbzq"
         private var cachedContext = WeakReference<Context>(null)
-        private var cachedXposed = WeakReference<XposedInterface>(null)
+        private var cachedXposed: XposedInterface? = null
         private var cachedRemotePrefs = WeakReference<SharedPreferences>(null)
         private val currentApplicationMethod: Method by lazy(LazyThreadSafetyMode.NONE) {
             Class.forName("android.app.ActivityThread")
@@ -339,7 +349,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
         fun attach(context: Context, xposed: XposedInterface? = null) {
             cachedContext = WeakReference(context.applicationContext ?: context)
-            if (xposed != null) cachedXposed = WeakReference(xposed)
+            if (xposed != null) cachedXposed = xposed
         }
 
         val instance: SharedPreferences by lazy(LazyThreadSafetyMode.NONE) {

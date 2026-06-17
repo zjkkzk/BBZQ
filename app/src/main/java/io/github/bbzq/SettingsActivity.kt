@@ -13,11 +13,12 @@ import android.widget.TextView
 
 class SettingsActivity : Activity() {
     private val prefs by lazy {
-        try {
+        val base = try {
             getSharedPreferences(ModuleSettings.PREFS_NAME, MODE_WORLD_READABLE)
         } catch (_: SecurityException) {
             getSharedPreferences(ModuleSettings.PREFS_NAME, MODE_PRIVATE)
         }
+        ReadableModulePreferences(this, base)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

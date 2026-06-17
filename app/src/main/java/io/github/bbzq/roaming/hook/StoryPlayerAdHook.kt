@@ -12,6 +12,7 @@ import io.github.bbzq.roaming.getObjectField
 import io.github.bbzq.roaming.hookAfter
 import io.github.bbzq.roaming.hookBefore
 import io.github.bbzq.roaming.methodsNamed
+import io.github.bbzq.roaming.replace
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
@@ -27,6 +28,7 @@ class StoryPlayerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         var hookCount = 0
         hookCount += installStoryFeedResponseHook()
         hookCount += installStoryPagerPlayerHook()
+        hookCount += installStoryAdRerankHook()
         if (hookCount == 0) {
             log("startHook: StoryPlayerAd no hook point found")
         }
@@ -84,6 +86,31 @@ class StoryPlayerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             )
         }
         return methods.size
+    }
+
+    private fun installStoryAdRerankHook(): Int {
+        val rerankTask = STORY_AD_RERANK_TASK.from(classLoader) ?: return 0
+        val invokeSuspend = rerankTask.methodsNamed("invokeSuspend")
+            .firstOrNull {
+                it.parameterCount == 1 &&
+                    it.parameterTypes[0] == Any::class.java &&
+                    it.returnType == Any::class.java &&
+                    !Modifier.isStatic(it.modifiers) &&
+                    !Modifier.isAbstract(it.modifiers)
+            }
+            ?: return 0
+        val unit = KOTLIN_UNIT.from(classLoader)
+            ?.getDeclaredField("INSTANCE")
+            ?.apply { isAccessible = true }
+            ?.get(null)
+            ?: return 0
+
+        env.replace(invokeSuspend) {
+            log("StoryPlayerAd disabled story ad rerank request")
+            unit
+        }
+        log("startHook: StoryPlayerAd at ${invokeSuspend.declaringClass.name}.${invokeSuspend.name}")
+        return 1
     }
 
     private fun isStoryListMethod(method: Method): Boolean =
@@ -188,6 +215,9 @@ class StoryPlayerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private companion object {
         private const val STORY_PAGER_PLAYER = "com.bilibili.video.story.player.StoryPagerPlayer"
         private const val STORY_FEED_RESPONSE = "com.bilibili.video.story.api.StoryFeedResponse"
+        private const val STORY_AD_RERANK_TASK =
+            "com.bilibili.video.story.action.service.StoryAdReRankService\$2"
         private const val STORY_DETAIL = "com.bilibili.video.story.StoryDetail"
+        private const val KOTLIN_UNIT = "kotlin.Unit"
     }
 }
