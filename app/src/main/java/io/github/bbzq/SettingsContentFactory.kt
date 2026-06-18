@@ -151,9 +151,15 @@ class SettingsContentFactory(
     private fun homeRecommendRows(): List<View> {
         return listOf(
             createSwitchRow(
-                "移除首页推荐宽屏广告",
-                "过滤首页推荐流中的大横幅和宽屏广告卡片。",
+                "移除首页推荐广告",
+                "过滤首页推荐流中的大横幅、信息流广告和广告推广视频。",
                 ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED,
+                false,
+            ),
+            createSwitchRow(
+                "移除首页推荐图文",
+                "过滤首页推荐流中的图文动态卡片。",
+                ModuleSettings.KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED,
                 false,
             ),
             createSwitchRow(

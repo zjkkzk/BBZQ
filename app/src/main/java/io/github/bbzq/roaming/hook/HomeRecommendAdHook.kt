@@ -1,5 +1,6 @@
 package io.github.bbzq.roaming.hook
 
+import android.content.pm.ApplicationInfo
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.roaming.BaseRoamingHook
@@ -15,17 +16,20 @@ import java.lang.reflect.Modifier
 
 class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private var fieldWriteFailedLogged = false
+    private var itemDebugFailedLogged = false
+    private val methodCache = mutableMapOf<Class<*>, MutableMap<String, Method?>>()
 
     override fun startHook() {
         if (env.processName != env.packageName) return
-        val enabled = ModuleSettings.isPurifyHomeRecommendAdEnabled(prefs)
-        if (!enabled) {
+        val options = currentOptions()
+        if (!options.enabled) {
             log("startHook: HomeRecommendAd disabled, provider=${ModuleSettingsBridge.lastProviderStatus}")
             return
         }
 
         val responseClass = PEGASUS_RESPONSE.from(classLoader)
         val holderDataClass = PEGASUS_HOLDER_DATA.from(classLoader)
+        val baseDataClass = BASE_PEGASUS_DATA.from(classLoader)
         if (responseClass == null || holderDataClass == null) {
             log("startHook: HomeRecommendAd missing response=$responseClass holderData=$holderDataClass")
             return
@@ -51,11 +55,23 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         val symbols = FilterSymbols(
             getHolderType = getHolderType,
+            getBizType = holderDataClass.methodsNamed("getBizType")
+                .firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
             getHolderStyle = holderDataClass.methodsNamed("getHolderStyle")
                 .firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
             isSmallCard = HOLDER_STYLE.from(classLoader)
                 ?.methodsNamed("isSmallCard")
                 ?.firstOrNull { it.parameterCount == 0 && it.returnType == Boolean::class.javaPrimitiveType },
+            getAdInfo = baseDataClass?.methodsNamed("getAdInfo")
+                ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
+            getCardType = baseDataClass?.methodsNamed("getCardType")
+                ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
+            getCardGoto = baseDataClass?.methodsNamed("getCardGoto")
+                ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
+            getGoTo = baseDataClass?.methodsNamed("getGoTo")
+                ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
+            getUri = baseDataClass?.methodsNamed("getUri")
+                ?.firstOrNull { it.parameterCount == 0 && !Modifier.isStatic(it.modifiers) },
             adInfoClass = AD_INFO.from(classLoader),
             itemsField = responseClass.allFields()
                 .filter { List::class.java.isAssignableFrom(it.type) }
@@ -63,7 +79,8 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
 
         env.hookAfter(getItems) { param ->
-            val result = filterReturnList(param, symbols)
+            (param.result as? List<*>)?.let { logRecommendItems(it, symbols) }
+            val result = filterReturnList(param, symbols, currentOptions())
             if (result != null) {
                 log(
                     "HomeRecommendAd removed ${result.removed} item(s) " +
@@ -75,7 +92,213 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         log("startHook: HomeRecommendAd at ${getItems.declaringClass.name}.${getItems.name}")
     }
 
-    private fun filterReturnList(param: MethodHookParam, symbols: FilterSymbols): FilterResult? {
+    private fun currentOptions(): FilterOptions =
+        FilterOptions(
+            removeAds = ModuleSettings.isPurifyHomeRecommendAdEnabled(prefs),
+            removePictures = ModuleSettings.isPurifyHomeRecommendPictureEnabled(prefs),
+        )
+
+    private fun logRecommendItems(items: List<*>, symbols: FilterSymbols) {
+        if (!isDebugModule()) return
+        log("HomeRecommendFeed items=${items.size}")
+        items.forEachIndexed { index, item ->
+            runCatching {
+                log(describeRecommendItem(index, item, symbols))
+            }.onFailure { throwable ->
+                if (!itemDebugFailedLogged) {
+                    itemDebugFailedLogged = true
+                    log("HomeRecommendFeed item debug failed", throwable)
+                }
+            }
+        }
+    }
+
+    private fun isDebugModule(): Boolean =
+        (xposed.moduleApplicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    private fun describeRecommendItem(index: Int, item: Any?, symbols: FilterSymbols): String {
+        if (item == null) return "HomeRecommendFeed item index=$index null"
+
+        val holderType = holderTypeOf(item, symbols.getHolderType)
+        val args = callNoArg(item, "getArgs")
+        val upArgs = callNoArg(item, "getUpArgs")
+        val playerArgs = callNoArg(item, "getPlayerArgs")
+        val adInfo = callNoArg(item, "getAdInfo")
+        val extra = callNoArg(item, "getExtra")
+
+        return buildString {
+            append("HomeRecommendFeed item")
+            appendPart("index", index)
+            appendPart("class", item.javaClass.name)
+            appendPart("video", playerArgs != null || callNoArg(item, "getVideoId") != null)
+            appendPart("ad", symbols.adInfoClass?.isInstance(item) == true || adInfo != null)
+            appendPart("holderType", holderType)
+            appendPart("holderStyle", callNoArg(item, "getHolderStyle"))
+            appendPart("holderItemId", callNoArg(item, "getHolderItemId"))
+            appendPart("idx", callNoArg(item, "getIdx"))
+            appendPart("bizType", callNoArg(item, "getBizType"))
+            appendPart("cardType", callNoArg(item, "getCardType"))
+            appendPart("cardGoto", callNoArg(item, "getCardGoto"))
+            appendPart("goTo", callNoArg(item, "getGoTo"))
+            appendPart("fromType", callNoArg(item, "getFromType"))
+            appendPart("id", callNoArg(item, "getId"))
+            appendPart("materialId", callNoArg(item, "getMaterialId"))
+            appendPart("title", callNoArg(item, "getTitle"))
+            appendPart("subtitle", callNoArg(item, "getSubtitle"))
+            appendPart("param", callNoArg(item, "getParam"))
+            appendPart("uri", callNoArg(item, "getUri"))
+            appendPart("cover", callNoArg(item, "getCover"))
+            appendPart("trackId", callNoArg(item, "getTrackId"))
+            appendPart("posRecUniqueId", callNoArg(item, "getPosRecUniqueId"))
+            appendPart("zeroSignal", callNoArg(item, "getZeroSignal"))
+            appendPart("canPlay", callNoArg(item, "getCanPlay"))
+            appendPart("duration", callNoArg(item, "getDuration"))
+            appendPart("videoId", callNoArg(item, "getVideoId"))
+            appendPart("workId", callNoArg(item, "getWorkId"))
+            appendPart("workTitle", callNoArg(item, "getWorkTitle"))
+            appendPart("upperId", callNoArg(item, "getUpperId"))
+            appendPart("upperName", callNoArg(item, "getUpperName"))
+            appendPart("extraUri", callNoArg(item, "getExtraUri"))
+            appendPart("preview", callNoArg(item, "isPreview"))
+            appendPart("args", describeArgs(args))
+            appendPart("upArgs", describeUpArgs(upArgs))
+            appendPart("playerArgs", describePlayerArgs(playerArgs))
+            appendPart("extra", describeExtra(extra))
+            appendPart("adInfo", adInfo?.javaClass?.name)
+        }.limitLength(MAX_LOG_LINE_LENGTH)
+    }
+
+    private fun describeArgs(args: Any?): String? {
+        if (args == null) return null
+        return buildString {
+            appendPart("aid", callNoArg(args, "getAid"))
+            appendPart("upId", callNoArg(args, "getUpId"))
+            appendPart("upName", callNoArg(args, "getUpName"))
+            appendPart("rid", callNoArg(args, "getRid"))
+            appendPart("rname", callNoArg(args, "getRname"))
+            appendPart("tid", callNoArg(args, "getTid"))
+            appendPart("tname", callNoArg(args, "getTname"))
+            appendPart("roomId", callNoArg(args, "getRoomId"))
+            appendPart("online", callNoArg(args, "getOnline"))
+            appendPart("type", callNoArg(args, "getType"))
+            appendPart("trackId", callNoArg(args, "getTrackId"))
+            appendPart("state", callNoArg(args, "getState"))
+            appendPart("convergeType", callNoArg(args, "getConvergeType"))
+            appendPart("follow", callNoArg(args, "isFollow"))
+            appendPart("ipId", callNoArg(args, "getIpId"))
+            appendPart("reportExtraInfo", callNoArg(args, "getReportExtraInfo"))
+        }.trimStart()
+    }
+
+    private fun describeUpArgs(upArgs: Any?): String? {
+        if (upArgs == null) return null
+        return buildString {
+            appendPart("upId", callNoArg(upArgs, "getUpId"))
+            appendPart("upName", callNoArg(upArgs, "getUpName"))
+            appendPart("upFace", callNoArg(upArgs, "getUpFace"))
+            appendPart("selected", callNoArg(upArgs, "getSelected"))
+        }.trimStart()
+    }
+
+    private fun describePlayerArgs(playerArgs: Any?): String? {
+        if (playerArgs == null) return null
+        return buildString {
+            appendFieldPart("aid", playerArgs)
+            appendFieldPart("cid", playerArgs)
+            appendFieldPart("epid", playerArgs)
+            appendFieldPart("pgcSeasonId", playerArgs)
+            appendFieldPart("roomId", playerArgs)
+            appendFieldPart("fakeDuration", playerArgs)
+            appendFieldPart("isLive", playerArgs)
+            appendFieldPart("isPreview", playerArgs)
+            appendFieldPart("subtype", playerArgs)
+            appendFieldPart("videoType", playerArgs)
+            appendFieldPart("manualPlay", playerArgs)
+            appendFieldPart("hidePlayButton", playerArgs)
+            appendFieldPart("contentMode", playerArgs)
+        }.trimStart()
+    }
+
+    private fun describeExtra(extra: Any?): String? {
+        if (extra == null) return null
+        return buildString {
+            appendPart("indexInResponse", callNoArg(extra, "getIndexInResponse"))
+            appendPart("uuid", callNoArg(extra, "getUuid"))
+            appendPart("cardStartTime", callNoArg(extra, "getCardStartTime"))
+            appendPart("exposed", callNoArg(extra, "isExposed"))
+            appendPart("recoverCard", callNoArg(extra, "isRecoverCard"))
+            appendPart("insertCardFlush", callNoArg(extra, "isInsertCardFlush"))
+        }.trimStart()
+    }
+
+    private fun callNoArg(target: Any?, name: String): Any? {
+        if (target == null) return null
+        val method = debugNoArgMethod(target.javaClass, name) ?: return null
+        return runCatching { method.invoke(target) }.getOrNull()
+    }
+
+    private fun debugNoArgMethod(type: Class<*>, name: String): Method? =
+        synchronized(methodCache) {
+            val methods = methodCache.getOrPut(type) { mutableMapOf() }
+            if (methods.containsKey(name)) {
+                methods[name]
+            } else {
+                val method = type.methods
+                    .firstOrNull {
+                        it.name == name &&
+                            it.parameterCount == 0 &&
+                            !Modifier.isStatic(it.modifiers)
+                    }
+                    ?.apply { isAccessible = true }
+                methods[name] = method
+                method
+            }
+        }
+
+    private fun StringBuilder.appendPart(name: String, value: Any?) {
+        append(' ')
+        append(name)
+        append('=')
+        append(formatValue(value))
+    }
+
+    private fun StringBuilder.appendFieldPart(name: String, target: Any) {
+        appendPart(name, fieldValue(target, name))
+    }
+
+    private fun fieldValue(target: Any, name: String): Any? =
+        runCatching {
+            target.javaClass.getField(name).get(target)
+        }.getOrNull()
+
+    private fun formatValue(value: Any?): String =
+        when (value) {
+            null -> "null"
+            is CharSequence -> value.toString().quoteAndLimit()
+            is Array<*> -> value.joinToString(prefix = "[", postfix = "]") { formatValue(it) }
+                .limitLength(MAX_VALUE_LENGTH)
+            is Boolean,
+            is Number -> value.toString()
+            is Map<*, *> -> value.entries.joinToString(prefix = "{", postfix = "}") { (key, mapValue) ->
+                "${formatValue(key)}:${formatValue(mapValue)}"
+            }.limitLength(MAX_VALUE_LENGTH)
+            is Iterable<*> -> value.joinToString(prefix = "[", postfix = "]") { formatValue(it) }
+                .limitLength(MAX_VALUE_LENGTH)
+            else -> value.toString().limitLength(MAX_VALUE_LENGTH)
+        }
+
+    private fun String.quoteAndLimit(): String =
+        "\"" + replace("\n", "\\n").replace("\r", "\\r").limitLength(MAX_VALUE_LENGTH) + "\""
+
+    private fun String.limitLength(maxLength: Int): String =
+        if (length <= maxLength) this else take(maxLength - 3) + "..."
+
+    private fun filterReturnList(
+        param: MethodHookParam,
+        symbols: FilterSymbols,
+        options: FilterOptions,
+    ): FilterResult? {
+        if (!options.enabled) return null
         val items = param.result as? List<*> ?: return null
         if (items.isEmpty()) return null
 
@@ -83,7 +306,7 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val reasons = linkedMapOf<String, Int>()
         var removed = 0
         items.forEach { item ->
-            val reason = removeReason(item, symbols)
+            val reason = removeReason(item, symbols, options)
             if (reason != null) {
                 removed += 1
                 reasons[reason] = (reasons[reason] ?: 0) + 1
@@ -98,16 +321,47 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return FilterResult(filtered, removed, reasons)
     }
 
-    private fun removeReason(item: Any?, symbols: FilterSymbols): String? {
+    private fun removeReason(item: Any?, symbols: FilterSymbols, options: FilterOptions): String? {
         if (item == null) return null
         val holderType = holderTypeOf(item, symbols.getHolderType)
-        if (holderType == BANNER_V8) return "banner_v8"
-        if (symbols.adInfoClass?.isInstance(item) == true && isWideCard(item, symbols)) return "ad_card"
+        if (options.removeAds) {
+            if (holderType == BANNER_V8) return "banner_v8"
+            if (isHomeRecommendAd(item, holderType, symbols)) return "ad"
+            if (hasAdInfo(item, symbols) && isWideCard(item, symbols)) return "ad_card"
+        }
+        if (options.removePictures && isPictureCard(item, symbols)) return "picture"
         return null
     }
 
     private fun holderTypeOf(item: Any, getHolderType: Method): String? =
         runCatching { getHolderType.invoke(item) as? String }.getOrNull()
+
+    private fun isHomeRecommendAd(item: Any, holderType: String?, symbols: FilterSymbols): Boolean {
+        val bizType = invokeString(symbols.getBizType, item)
+        val cardType = invokeString(symbols.getCardType, item)
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        return bizType == BIZ_TYPE_AD ||
+            holderType?.startsWith(CM_V2) == true ||
+            cardType == CM_V2 ||
+            cardGoto?.startsWith(AD_GOTO_PREFIX) == true
+    }
+
+    private fun isPictureCard(item: Any, symbols: FilterSymbols): Boolean {
+        val cardGoto = invokeString(symbols.getCardGoto, item)
+        val goTo = invokeString(symbols.getGoTo, item)
+        val uri = invokeString(symbols.getUri, item)
+        return cardGoto == PICTURE_GOTO ||
+            goTo == PICTURE_GOTO ||
+            uri?.startsWith(OPUS_URI_PREFIX) == true
+    }
+
+    private fun hasAdInfo(item: Any, symbols: FilterSymbols): Boolean =
+        symbols.adInfoClass?.isInstance(item) == true || runCatching {
+            symbols.getAdInfo?.invoke(item) != null
+        }.getOrDefault(false)
+
+    private fun invokeString(method: Method?, target: Any): String? =
+        runCatching { method?.invoke(target)?.toString() }.getOrNull()
 
     private fun isWideCard(item: Any, symbols: FilterSymbols): Boolean {
         val getHolderStyle = symbols.getHolderStyle ?: return true
@@ -133,11 +387,24 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
     private data class FilterSymbols(
         val getHolderType: Method,
+        val getBizType: Method?,
         val getHolderStyle: Method?,
         val isSmallCard: Method?,
+        val getAdInfo: Method?,
+        val getCardType: Method?,
+        val getCardGoto: Method?,
+        val getGoTo: Method?,
+        val getUri: Method?,
         val adInfoClass: Class<*>?,
         val itemsField: Field?,
     )
+
+    private data class FilterOptions(
+        val removeAds: Boolean,
+        val removePictures: Boolean,
+    ) {
+        val enabled: Boolean = removeAds || removePictures
+    }
 
     private data class FilterResult(
         val items: List<Any?>,
@@ -151,8 +418,16 @@ class HomeRecommendAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private companion object {
         private const val PEGASUS_RESPONSE = "com.bilibili.pegasus.data.base.PegasusResponse"
         private const val PEGASUS_HOLDER_DATA = "com.bilibili.pegasus.PegasusHolderData"
+        private const val BASE_PEGASUS_DATA = "com.bilibili.pegasus.data.base.BasePegasusData"
         private const val HOLDER_STYLE = "com.bilibili.pegasus.HolderStyle"
         private const val AD_INFO = "com.bilibili.adcommon.data.IAdInfo"
         private const val BANNER_V8 = "banner_v8"
+        private const val BIZ_TYPE_AD = "AD"
+        private const val CM_V2 = "cm_v2"
+        private const val AD_GOTO_PREFIX = "ad_"
+        private const val PICTURE_GOTO = "picture"
+        private const val OPUS_URI_PREFIX = "bilibili://opus/"
+        private const val MAX_VALUE_LENGTH = 300
+        private const val MAX_LOG_LINE_LENGTH = 3500
     }
 }
