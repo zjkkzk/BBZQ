@@ -43,11 +43,12 @@ apktransform {
 android {
     namespace = "io.github.bbzq"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "io.github.bbzq"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 37
         versionCode = releaseCode
         versionName = "v${releaseName}-${releaseCode}"
 
@@ -87,7 +88,6 @@ configurations.all {
 
 dependencies {
     compileOnly(libs.libxposed.api)
-    compileOnly(libs.xposed.api)
     implementation(libs.libxposed.service)
     implementation(libs.okhttp)
 }

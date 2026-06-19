@@ -5,7 +5,6 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
-import de.robv.android.xposed.XSharedPreferences
 import io.github.libxposed.api.XposedInterface
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
@@ -34,8 +33,6 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     private fun getAllFromSources(): SettingsSource {
         val remote = getAllFromRemotePreferences()
         if (remote.isNotEmpty()) return SettingsSource(remote, authoritative = true)
-        val xshared = getAllFromXSharedPreferences()
-        if (xshared.isNotEmpty()) return SettingsSource(xshared, authoritative = true)
         val provider = getAllFromProvider()
         if (provider.isNotEmpty()) return SettingsSource(provider, authoritative = true)
         return SettingsSource(fallbackDefaults(), authoritative = false)
@@ -59,18 +56,6 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         val values = result?.keySet()?.associateWith { key -> result.get(key) }.orEmpty()
         return values
     }
-
-    private fun getAllFromXSharedPreferences(): Map<String, Any?> =
-        runCatching {
-            XSharedPreferences(MODULE_PACKAGE, ModuleSettings.PREFS_NAME).also { it.reload() }
-        }.mapCatching { prefs ->
-            prefs.all.also {
-                lastProviderStatus = if (it.isEmpty()) "xshared empty" else "xshared ok"
-            }
-        }.getOrElse {
-            lastProviderStatus = "xshared ${it.javaClass.simpleName}: ${it.message}"
-            emptyMap()
-        }
 
     private fun fallbackDefaults(): Map<String, Any?> = mapOf(
         ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED to true,

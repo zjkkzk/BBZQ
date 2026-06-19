@@ -41,10 +41,6 @@
             android:name=".ModuleSettingsProvider"
             android:authorities="io.github.bbzq.settings"
             android:exported="true" />
-
-        <meta-data
-            android:name="xposedsharedprefs"
-            android:value="true" />
     </application>
 
 </manifest>
