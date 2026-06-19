@@ -1,26 +1,30 @@
 package io.github.bbzq.feats.hook
 
-import android.app.AlertDialog
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import dalvik.system.BaseDexClassLoader
 import dalvik.system.DexFile
+import io.github.bbzq.R
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
-import io.github.bbzq.feats.MethodHookParam
 import io.github.bbzq.feats.RoamingEnv
 import io.github.bbzq.feats.allFields
 import io.github.bbzq.feats.allMethods
 import io.github.bbzq.feats.hookBefore
+import io.github.bbzq.feats.hookAfter
 import io.github.bbzq.feats.getObjectField
-import io.github.bbzq.feats.replace
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Locale
+import kotlin.LazyThreadSafetyMode
 
 class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
+    private val cachedClassNames by lazy(LazyThreadSafetyMode.NONE) {
+        dexClassNames().toList()
+    }
+
     override fun startHook() {
         if (!ModuleSettings.isCustomDownloadThreadEnabled(prefs)) return
 
@@ -43,16 +47,16 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
         type.declaredConstructors
             .filter { ctor -> ctor.parameterTypes.any { it == TextView::class.java } }
             .forEach { ctor ->
-                env.hookBefore(ctor) { param ->
-                    val view = param.args.firstOrNull { it is TextView } as? TextView ?: return@hookBefore
-                    val parent = view.parent as? ViewGroup ?: return@hookBefore
-                    val visibility = if (view.tag as? Int == 1) {
-                        view.text = CUSTOM_LABEL
-                        View.VISIBLE
-                    } else {
-                        View.INVISIBLE
+                env.hookAfter(ctor) { param ->
+                    val view = param.args.firstOrNull { it is TextView } as? TextView ?: return@hookAfter
+                    view.post {
+                        val parent = view.parent as? ViewGroup ?: return@post
+                        val custom = view.tag as? Int == 1
+                        if (custom) {
+                            view.text = env.hostContext.getString(R.string.custom_download_thread_label)
+                        }
+                        parent.getChildAt(1)?.visibility = if (custom) View.VISIBLE else View.INVISIBLE
                     }
-                    parent.getChildAt(1)?.visibility = visibility
                 }
                 count++
             }
@@ -64,11 +68,10 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
         } ?: return count
 
         env.hookBefore(onClick) { param ->
-            val view = param.thisObject?.findFieldValue(TextView::class.java) ?: return@hookBefore
+            val view = param.thisObject.findFieldValue(TextView::class.java) ?: return@hookBefore
             if (view.tag as? Int != 1) return@hookBefore
 
-            applyCustomConcurrency(view, param)
-            param.result = null
+            view.tag = ModuleSettings.getCustomDownloadConcurrency(prefs)
         }
         count++
         return count
@@ -76,36 +79,42 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
     private fun hookReportDownloadThread(): Int {
         val method = findReportDownloadThreadMethod() ?: return 0
-        if (method.returnType.isPrimitive) return 0
-        env.replace(method) { null }
+        log("reportDownloadThread candidate: ${method.toGenericString()}")
+        if (method.returnType.isPrimitive || method.returnType == Void.TYPE) return 0
+        if (!CharSequence::class.java.isAssignableFrom(method.returnType)) {
+            log("Skip reportDownloadThread hook: unsupported return type ${method.returnType.name}")
+            return 0
+        }
+        env.hookBefore(method) { param ->
+            param.result = ""
+        }
         return 1
     }
 
-    private fun applyCustomConcurrency(view: TextView, param: MethodHookParam) {
-        view.tag = ModuleSettings.getCustomDownloadConcurrency(prefs)
-        runCatching { param.invokeOriginalMethod() }
-            .onFailure { log("DownloadThread onClick failed", it) }
-    }
-
-    private fun findTextViewFieldValue(target: Any, type: Class<out TextView>): TextView? {
+    private fun Any?.findFieldValue(type: Class<out TextView>): TextView? {
+        val target = this ?: return null
         return target.javaClass.allFields().firstNotNullOfOrNull { field ->
             if (!type.isAssignableFrom(field.type)) return@firstNotNullOfOrNull null
             runCatching { field.get(target) as? TextView }.getOrNull()
         }
     }
 
-    private fun Any?.findFieldValue(type: Class<out TextView>): TextView? {
-        val target = this ?: return null
-        return findTextViewFieldValue(target, type)
-    }
-
     private fun findListenerTypes(): List<Class<*>> {
-        val scoped = findClasses { name ->
-            val lower = name.lowercase(Locale.US)
-            lower.contains("download") || lower.contains("thread") || lower.contains("listener")
-        }.filter { it.isDownloadThreadListener() }
+        val scoped = findClasses(
+            predicate = { name ->
+                val lower = name.lowercase(Locale.US)
+                lower.contains("download") || lower.contains("thread") || lower.contains("listener")
+            },
+        ).filter { it.isDownloadThreadListener() }
+        if (scoped.isNotEmpty()) return scoped
 
-        return if (scoped.isNotEmpty()) scoped else findClasses { true }.filter { it.isDownloadThreadListener() }
+        return findClasses(
+            predicate = { name ->
+                val lower = name.lowercase(Locale.US)
+                lower.contains("download") || lower.contains("cache") || lower.contains("offline")
+            },
+            limit = 500,
+        ).filter { it.isDownloadThreadListener() }
     }
 
     private fun findReportDownloadThreadMethod(): Method? {
@@ -114,11 +123,21 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun findReportDownloadThreadMethod(broad: Boolean): Method? {
-        val classes = findClasses { name ->
-            if (broad) return@findClasses true
-            val lower = name.lowercase(Locale.US)
-            lower.contains("download") || lower.contains("thread") || lower.contains("report")
+        val predicate: (String) -> Boolean = if (broad) {
+            { name ->
+                val lower = name.lowercase(Locale.US)
+                lower.contains("download") || lower.contains("cache") || lower.contains("offline")
+            }
+        } else {
+            { name ->
+                val lower = name.lowercase(Locale.US)
+                lower.contains("download") || lower.contains("thread") || lower.contains("report")
+            }
         }
+        val classes = findClasses(
+            predicate = predicate,
+            limit = if (broad) 500 else Int.MAX_VALUE,
+        )
         return classes.asSequence()
             .flatMap { type -> type.allMethods().asSequence() }
             .firstOrNull { method ->
@@ -129,9 +148,10 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
             }
     }
 
-    private fun findClasses(predicate: (String) -> Boolean): List<Class<*>> {
-        return dexClassNames()
+    private fun findClasses(predicate: (String) -> Boolean, limit: Int = Int.MAX_VALUE): List<Class<*>> {
+        return cachedClassNames.asSequence()
             .filter(predicate)
+            .take(limit)
             .mapNotNull { name -> runCatching { Class.forName(name, false, classLoader) }.getOrNull() }
             .distinctBy { it.name }
             .toList()
@@ -163,7 +183,4 @@ class DownloadThreadHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return hasTextViewConstructor && hasOnClick
     }
 
-    private companion object {
-        private const val CUSTOM_LABEL = "自定义"
-    }
 }

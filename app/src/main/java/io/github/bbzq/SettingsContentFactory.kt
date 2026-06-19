@@ -32,6 +32,9 @@ class SettingsContentFactory(
     private val sponsorBlockCategoryCheckBoxes = mutableMapOf<String, CheckBox>()
     private lateinit var disableLongPressCopySwitch: Switch
     private lateinit var enhanceLongPressCopySwitch: Switch
+    private lateinit var downloadThreadSwitch: Switch
+    private lateinit var downloadConcurrencyRow: View
+    private lateinit var downloadConcurrencySummary: TextView
     private lateinit var bottomBarSwitch: Switch
     private lateinit var storyVideoAdSwitch: Switch
     private lateinit var blockedCountView: TextView
@@ -161,16 +164,24 @@ class SettingsContentFactory(
     private fun downloadRows(): List<View> {
         val rows = mutableListOf<View>()
         rows += createSwitchRow(
-                "自定义下载线程",
-                "开启后在下载设置里显示“自定义下载线程”，与原有线程数选项分开。",
+                context.getString(R.string.custom_download_thread_title),
+                context.getString(R.string.custom_download_thread_summary),
                 ModuleSettings.KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED,
                 false,
-            )
+            ) {
+                downloadThreadSwitch = it
+            }
         rows += createClickableInfoRow(
-            "自定义同时缓存数",
-            "当前值：${ModuleSettings.getCustomDownloadConcurrency(prefs)}。点击调整自定义模式下的同时缓存数。",
+            context.getString(R.string.custom_download_concurrency_title),
+            context.getString(
+                R.string.custom_download_concurrency_summary,
+                ModuleSettings.getCustomDownloadConcurrency(prefs),
+            ),
         ) {
             showCustomDownloadConcurrencyDialog()
+        }.also {
+            downloadConcurrencyRow = it
+            downloadConcurrencySummary = (it as ViewGroup).getChildAt(1) as TextView
         }
         return rows
     }
@@ -435,14 +446,14 @@ class SettingsContentFactory(
             value = ModuleSettings.getCustomDownloadConcurrency(prefs)
         }
         AlertDialog.Builder(context)
-            .setTitle("自定义同时缓存数")
+            .setTitle(R.string.custom_download_concurrency_dialog_title)
             .setView(picker)
             .setNegativeButton("取消", null)
             .setPositiveButton("确定") { _, _ ->
                 prefs.edit()
                     .putInt(ModuleSettings.KEY_CUSTOM_DOWNLOAD_CONCURRENCY, picker.value)
                     .apply()
-                openPage(SettingsActivity.PAGE_ROOT)
+                refresh()
             }
             .show()
     }
@@ -661,6 +672,21 @@ class SettingsContentFactory(
         if (::enhanceLongPressCopySwitch.isInitialized) {
             enhanceLongPressCopySwitch.isEnabled = copyBaseEnabled
             enhanceLongPressCopySwitch.isChecked = copyEnhanceEnabled
+        }
+        val downloadEnabled = ModuleSettings.isCustomDownloadThreadEnabled(prefs)
+        if (::downloadThreadSwitch.isInitialized) {
+            downloadThreadSwitch.isChecked = downloadEnabled
+        }
+        if (::downloadConcurrencyRow.isInitialized) {
+            downloadConcurrencyRow.isEnabled = downloadEnabled
+            downloadConcurrencyRow.alpha = if (downloadEnabled) 1f else 0.45f
+        }
+        if (::downloadConcurrencySummary.isInitialized) {
+            downloadConcurrencySummary.text =
+                context.getString(
+                    R.string.custom_download_concurrency_summary,
+                    ModuleSettings.getCustomDownloadConcurrency(prefs),
+                )
         }
         if (::bottomBarSwitch.isInitialized) {
             bottomBarSwitch.isChecked = bottomBarEnabled

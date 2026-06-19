@@ -38,6 +38,13 @@
     <string name="skip_mini_game_reward_ad_title">跳过小游戏激励广告</string>
     <string name="skip_mini_game_reward_ad_summary">自动快进或关闭小游戏中的激励视频广告。</string>
 
+    <string name="custom_download_thread_title">自定义下载线程</string>
+    <string name="custom_download_thread_summary">开启后在下载设置里显示“自定义下载线程”，与原有线程数选项分开。</string>
+    <string name="custom_download_concurrency_title">自定义同时缓存数</string>
+    <string name="custom_download_concurrency_summary">当前值：%1$d。点击调整自定义模式下的同时缓存数。</string>
+    <string name="custom_download_concurrency_dialog_title">自定义同时缓存数</string>
+    <string name="custom_download_thread_label">自定义</string>
+
     <string name="block_live_reservation_title">屏蔽直播预约</string>
     <string name="block_live_reservation_summary">移除视频详情页中的直播预约悬浮卡片。</string>
     <string name="block_live_room_qoe_popup_title">屏蔽直播间效果弹窗</string>
