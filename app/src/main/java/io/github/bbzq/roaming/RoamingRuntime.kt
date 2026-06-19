@@ -3,9 +3,10 @@
 import android.content.Context
 import android.content.SharedPreferences
 import io.github.bbzq.ModuleSettingsBridge
-import io.github.bbzq.roaming.hook.AccessKeyHook
 import io.github.bbzq.roaming.hook.BottomBarHook
 import io.github.bbzq.roaming.hook.AutoLikeHook
+import io.github.bbzq.roaming.hook.AccessKeyHook
+import io.github.bbzq.roaming.hook.TeenagersModeHook
 import io.github.bbzq.roaming.hook.FreeCopyHook
 import io.github.bbzq.roaming.hook.HomeRecommendAdHook
 import io.github.bbzq.roaming.hook.HomeRecommendAutoRefreshHook
@@ -63,6 +64,7 @@ object RoamingRuntime {
                 ::RewardAdHook,
                 ::AutoLikeHook,
                 ::AccessKeyHook,
+                ::TeenagersModeHook,
             )
         }
 

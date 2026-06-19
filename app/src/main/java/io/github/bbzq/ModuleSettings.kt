@@ -7,6 +7,7 @@ object ModuleSettings {
     const val KEY_MINI_PROGRAM_ENABLED = "mini_program"
     const val KEY_PURIFY_SHARE_ENABLED = "purify_share"
     const val KEY_SKIP_REWARD_AD_ENABLED = "skip_reward_ad"
+    const val KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED = "block_teenagers_mode_dialog"
     const val KEY_SKIP_SPLASH_AD_ENABLED = "skip_splash_ad_enabled"
     const val KEY_SKIP_VIDEO_AD_ENABLED = "skip_video_ad_enabled"
     const val KEY_SKIP_VIDEO_AD_CATEGORIES = "skip_video_ad_categories"
@@ -87,6 +88,9 @@ object ModuleSettings {
 
     fun isSkipSplashAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_SPLASH_AD_ENABLED, true)
+
+    fun isBlockTeenagersModeDialogEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED, false)
 
     fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)

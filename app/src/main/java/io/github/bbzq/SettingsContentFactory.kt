@@ -145,6 +145,12 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED,
                 true,
             ),
+            createSwitchRow(
+                "关闭青少年模式弹窗",
+                "检测到青少年模式提醒弹窗时自动关闭（finish 掉该 Activity）。",
+                ModuleSettings.KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED,
+                false,
+            ),
         )
     }
 
@@ -196,34 +202,32 @@ class SettingsContentFactory(
     }
 
     private fun playbackRows(): List<View> {
-        return listOf(
-            createInfoRow(
+        val rows = mutableListOf<View>()
+        if (ModuleSettings.isSkipVideoAdSettingsVisible(prefs)) {
+            rows += createInfoRow(
                 "空降助手",
-                if (ModuleSettings.isSkipVideoAdSettingsVisible(prefs)) {
-                    "入口已显示，请到“关于”分组进入空降助手功能开关和分类设定页。"
-                } else {
-                    "双击“关于”里的版本后，才会显示空降助手的隐藏设定入口。"
-                },
-            ),
-            createSwitchRow(
-                "屏蔽视频下方横幅广告",
-                "阻止视频详情页播放器下方横幅广告创建。",
-                ModuleSettings.KEY_BLOCK_VIDEO_DETAIL_BANNER_AD_ENABLED,
-                false,
-            ),
-            createSwitchRow(
-                "跳过视频激励广告",
-                "参考 BBZQ 的奖励广告处理逻辑，自动尝试完成视频激励页。",
-                ModuleSettings.KEY_SKIP_REWARD_AD_ENABLED,
-                false,
-            ),
-            createSwitchRow(
-                "自动点赞视频",
-                "进入视频详情页时自动触发点赞（仅在未点赞状态下生效。）",
-                ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED,
-                false,
-            ),
+                "入口已显示，请到“关于”分组进入空降助手功能开关和分类设定页。"
+            )
+        }
+        rows += createSwitchRow(
+            "屏蔽视频下方横幅广告",
+            "阻止视频详情页播放器下方横幅广告创建。",
+            ModuleSettings.KEY_BLOCK_VIDEO_DETAIL_BANNER_AD_ENABLED,
+            false,
         )
+        rows += createSwitchRow(
+            "跳过视频激励广告",
+            "自动尝试完成视频激励並获得奖励。",
+            ModuleSettings.KEY_SKIP_REWARD_AD_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
+            "自动点赞视频",
+            "进入视频详情页时自动触发点赞（仅在未点赞状态下生效。）",
+            ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED,
+            false,
+        )
+        return rows
     }
 
     private fun skipVideoAdOverviewRows(): List<View> {
