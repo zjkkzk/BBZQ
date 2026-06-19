@@ -1,4 +1,4 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.net.Uri
 import java.net.HttpURLConnection
@@ -148,16 +148,16 @@ internal object ShareLinkPurifier {
         ':',
         '!',
         '?',
-        '。',
-        '，',
-        '；',
-        '：',
-        '！',
-        '？',
-        '、',
-        '）',
-        '】',
-        '》',
+        '銆?,
+        '锛?,
+        '锛?,
+        '锛?,
+        '锛?,
+        '锛?,
+        '銆?,
+        '锛?,
+        '銆?,
+        '銆?,
     )
     private val BV_POSITIONS = intArrayOf(11, 10, 3, 8, 4, 6, 5, 7, 9)
     private val BV_TABLE = HashMap<Char, Int>().apply {
@@ -165,3 +165,4 @@ internal object ShareLinkPurifier {
             .forEachIndexed { index, char -> this[char] = index }
     }
 }
+

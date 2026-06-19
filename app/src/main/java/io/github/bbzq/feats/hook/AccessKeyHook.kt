@@ -1,16 +1,16 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.content.Context
 import io.github.bbzq.AccessKeyRepository
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.callMethod
-import io.github.bbzq.roaming.callStaticMethod
-import io.github.bbzq.roaming.from
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.callMethod
+import io.github.bbzq.feats.callStaticMethod
+import io.github.bbzq.feats.from
 
 class AccessKeyHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
-        // 仅在主进程中运行
+        // 浠呭湪涓昏繘绋嬩腑杩愯
         if (env.processName != env.packageName) return
         
         AccessKeyRepository.register {
@@ -23,20 +23,21 @@ class AccessKeyHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val biliAccountsClass = findBiliAccountsClass() ?: return null
         val context = env.hostContext
         
-        // 尝试获取当前账号实例
+        // 灏濊瘯鑾峰彇褰撳墠璐﹀彿瀹炰緥
         val account = biliAccountsClass.callStaticMethod("get", context) 
             ?: biliAccountsClass.callStaticMethod("a", context)
             ?: return null
             
-        // 尝试调用 getAccessKey 方法
+        // 灏濊瘯璋冪敤 getAccessKey 鏂规硶
         return (account.callMethod("getAccessKey") as? String)
-            ?: (account.callMethod("a") as? String) // 常见混淆名
+            ?: (account.callMethod("a") as? String) // 甯歌娣锋穯鍚?
     }
 
     private fun findBiliAccountsClass(): Class<*>? {
-        // 如果硬编码的类名无法找到，可能需要使用 dexHelper 搜索字符串 "initFacial enter" 来定位该类
+        // 濡傛灉纭紪鐮佺殑绫诲悕鏃犳硶鎵惧埌锛屽彲鑳介渶瑕佷娇鐢?dexHelper 鎼滅储瀛楃涓?"initFacial enter" 鏉ュ畾浣嶈绫?
         return "com.bilibili.lib.accounts.BiliAccounts".from(classLoader)
             ?: "com.bilibili.p4439app.accounts.BiliAccounts".from(classLoader)
             ?: "com.bilibili.app.accounts.BiliAccounts".from(classLoader)
     }
 }
+

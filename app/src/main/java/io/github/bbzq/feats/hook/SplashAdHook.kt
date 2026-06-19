@@ -1,12 +1,12 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.getObjectField
-import io.github.bbzq.roaming.hookAfter
-import io.github.bbzq.roaming.methodsNamed
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.getObjectField
+import io.github.bbzq.feats.hookAfter
+import io.github.bbzq.feats.methodsNamed
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
@@ -154,3 +154,4 @@ class SplashAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
     }
 }
+

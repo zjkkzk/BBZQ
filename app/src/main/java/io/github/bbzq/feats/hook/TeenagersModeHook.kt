@@ -1,11 +1,11 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.app.Activity
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.hookAfterMethod
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.hookAfterMethod
 
 class TeenagersModeHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
@@ -32,3 +32,4 @@ class TeenagersModeHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
     }
 }
+

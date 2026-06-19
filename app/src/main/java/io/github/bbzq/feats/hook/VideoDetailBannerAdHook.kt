@@ -1,12 +1,12 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.ModuleSettingsBridge
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.hookAfter
-import io.github.bbzq.roaming.methodsNamed
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.hookAfter
+import io.github.bbzq.feats.methodsNamed
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -137,3 +137,4 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private val BLOCKED_METHODS = setOf("getUpperAdView", "getUpperHDView", "getUpperNestView")
     }
 }
+

@@ -1,4 +1,4 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -8,9 +8,9 @@ import android.content.ClipboardManager
 import android.os.Bundle
 import android.widget.TextView
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.hookBefore
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.hookBefore
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -94,9 +94,9 @@ class FreeCopyHook(env: RoamingEnv) : BaseRoamingHook(env) {
             }
 
             val dialog = builder
-                .setTitle("自由复制")
+                .setTitle("鑷敱澶嶅埗")
                 .setMessage(text)
-                .setPositiveButton("复制原始") { _, _ ->
+                .setPositiveButton("澶嶅埗鍘熷") { _, _ ->
                     val clipboard = activity.getSystemService(ClipboardManager::class.java)
                     runWithOriginalCopy {
                         clipboard.setPrimaryClip(clip)
@@ -126,3 +126,4 @@ class FreeCopyHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private var topActivity: WeakReference<Activity>? = null
     }
 }
+

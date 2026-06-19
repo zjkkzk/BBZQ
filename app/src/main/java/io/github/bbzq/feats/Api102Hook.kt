@@ -1,4 +1,4 @@
-﻿package io.github.bbzq.roaming
+﻿package io.github.bbzq.feats
 
 import io.github.libxposed.api.XposedInterface
 import java.lang.reflect.Constructor
@@ -168,3 +168,4 @@ private fun Class<*>.findMethodOrNull(name: String, vararg parameterTypes: Class
         it.name == name && it.parameterTypes.contentEquals(parameterTypes)
     }
 }
+

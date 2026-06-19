@@ -1,12 +1,12 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.app.Activity
 import android.view.View
 import android.view.ViewGroup
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.hookAfterMethod
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.hookAfterMethod
 
 class AutoLikeHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
@@ -49,7 +49,7 @@ class AutoLikeHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         if (
             desc.contains("like") ||
-            desc.contains("赞") ||
+            desc.contains("璧?) ||
             tag.contains("like") ||
             tag.contains("digg") ||
             view.javaClass.name.contains("ImageView")
@@ -67,3 +67,4 @@ class AutoLikeHook(env: RoamingEnv) : BaseRoamingHook(env) {
         return null
     }
 }
+

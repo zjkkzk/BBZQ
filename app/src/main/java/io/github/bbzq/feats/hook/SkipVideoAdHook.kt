@@ -1,4 +1,4 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.os.Handler
 import android.os.Looper
@@ -6,15 +6,15 @@ import android.widget.Toast
 import dalvik.system.BaseDexClassLoader
 import dalvik.system.DexFile
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.BilibiliSponsorBlock
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.allMethods
-import io.github.bbzq.roaming.callMethod
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.getObjectField
-import io.github.bbzq.roaming.hookAfter
-import io.github.bbzq.roaming.hookBeforeMethod
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.BilibiliSponsorBlock
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.allMethods
+import io.github.bbzq.feats.callMethod
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.getObjectField
+import io.github.bbzq.feats.hookAfter
+import io.github.bbzq.feats.hookBeforeMethod
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -401,8 +401,8 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             .map(::categoryLabel)
             .distinct()
         if (labels.isEmpty()) return ""
-        val preview = labels.take(3).joinToString("、")
-        return if (labels.size > 3) "（$preview 等）" else "（$preview）"
+        val preview = labels.take(3).joinToString("銆?)
+        return if (labels.size > 3) "锛?preview 绛夛級" else "锛?preview锛?
     }
 
     private fun skipToastMessage(segment: BilibiliSponsorBlock.Segment): String =
@@ -444,3 +444,4 @@ class SkipVideoAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
     }
 }
+

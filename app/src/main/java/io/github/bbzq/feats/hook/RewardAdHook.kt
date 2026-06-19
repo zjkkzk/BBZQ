@@ -1,13 +1,13 @@
-﻿package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.os.Bundle
 import android.widget.TextView
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.hookAfterMethod
-import io.github.bbzq.roaming.setBooleanField
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.hookAfterMethod
+import io.github.bbzq.feats.setBooleanField
 
 class RewardAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
@@ -33,3 +33,4 @@ class RewardAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         log("startHook: RewardAd, methods=$count")
     }
 }
+

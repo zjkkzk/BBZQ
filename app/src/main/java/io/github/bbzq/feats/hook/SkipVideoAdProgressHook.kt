@@ -1,14 +1,14 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.hookAfterMethod
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.hookAfterMethod
 
 class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
     override fun startHook() {
@@ -121,3 +121,4 @@ class SkipVideoAdProgressHook(env: RoamingEnv) : BaseRoamingHook(env) {
         )
     }
 }
+

@@ -1,18 +1,18 @@
-package io.github.bbzq.roaming.hook
+﻿package io.github.bbzq.feats.hook
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import io.github.bbzq.ModuleSettings
-import io.github.bbzq.roaming.BaseRoamingHook
-import io.github.bbzq.roaming.RoamingEnv
-import io.github.bbzq.roaming.allMethods
-import io.github.bbzq.roaming.from
-import io.github.bbzq.roaming.getObjectField
-import io.github.bbzq.roaming.hookAfter
-import io.github.bbzq.roaming.hookAfterMethod
-import io.github.bbzq.roaming.hookBefore
-import io.github.bbzq.roaming.hookBeforeAllConstructors
-import io.github.bbzq.roaming.setObjectField
+import io.github.bbzq.feats.BaseRoamingHook
+import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.allMethods
+import io.github.bbzq.feats.from
+import io.github.bbzq.feats.getObjectField
+import io.github.bbzq.feats.hookAfter
+import io.github.bbzq.feats.hookAfterMethod
+import io.github.bbzq.feats.hookBefore
+import io.github.bbzq.feats.hookBeforeAllConstructors
+import io.github.bbzq.feats.setObjectField
 import java.lang.reflect.Modifier
 
 class ShareHook(env: RoamingEnv) : BaseRoamingHook(env) {
@@ -244,3 +244,4 @@ class ShareHook(env: RoamingEnv) : BaseRoamingHook(env) {
         private const val WATCHED_PREFIX = "\u5df2\u89c2\u770b"
     }
 }
+

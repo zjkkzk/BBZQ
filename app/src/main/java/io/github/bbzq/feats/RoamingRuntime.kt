@@ -1,23 +1,23 @@
-﻿package io.github.bbzq.roaming
+﻿package io.github.bbzq.feats
 
 import android.content.Context
 import android.content.SharedPreferences
 import io.github.bbzq.ModuleSettingsBridge
-import io.github.bbzq.roaming.hook.BottomBarHook
-import io.github.bbzq.roaming.hook.AutoLikeHook
-import io.github.bbzq.roaming.hook.AccessKeyHook
-import io.github.bbzq.roaming.hook.TeenagersModeHook
-import io.github.bbzq.roaming.hook.FreeCopyHook
-import io.github.bbzq.roaming.hook.HomeRecommendAdHook
-import io.github.bbzq.roaming.hook.HomeRecommendAutoRefreshHook
-import io.github.bbzq.roaming.hook.RewardAdHook
-import io.github.bbzq.roaming.hook.SettingHook
-import io.github.bbzq.roaming.hook.ShareHook
-import io.github.bbzq.roaming.hook.SkipVideoAdHook
-import io.github.bbzq.roaming.hook.SkipVideoAdProgressHook
-import io.github.bbzq.roaming.hook.SplashAdHook
-import io.github.bbzq.roaming.hook.StoryPlayerAdHook
-import io.github.bbzq.roaming.hook.VideoDetailBannerAdHook
+import io.github.bbzq.feats.hook.BottomBarHook
+import io.github.bbzq.feats.hook.AutoLikeHook
+import io.github.bbzq.feats.hook.AccessKeyHook
+import io.github.bbzq.feats.hook.TeenagersModeHook
+import io.github.bbzq.feats.hook.FreeCopyHook
+import io.github.bbzq.feats.hook.HomeRecommendAdHook
+import io.github.bbzq.feats.hook.HomeRecommendAutoRefreshHook
+import io.github.bbzq.feats.hook.RewardAdHook
+import io.github.bbzq.feats.hook.SettingHook
+import io.github.bbzq.feats.hook.ShareHook
+import io.github.bbzq.feats.hook.SkipVideoAdHook
+import io.github.bbzq.feats.hook.SkipVideoAdProgressHook
+import io.github.bbzq.feats.hook.SplashAdHook
+import io.github.bbzq.feats.hook.StoryPlayerAdHook
+import io.github.bbzq.feats.hook.VideoDetailBannerAdHook
 import io.github.libxposed.api.XposedInterface
 
 object RoamingRuntime {
@@ -114,3 +114,4 @@ abstract class BaseRoamingHook(
 
     abstract fun startHook()
 }
+
