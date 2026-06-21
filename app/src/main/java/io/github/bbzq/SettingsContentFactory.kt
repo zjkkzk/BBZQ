@@ -293,6 +293,12 @@ class SettingsContentFactory(
             false,
         )
         rows += createSwitchRow(
+            context.getString(R.string.playback_block_chronos_promotion_title),
+            context.getString(R.string.playback_block_chronos_promotion_summary),
+            ModuleSettings.KEY_BLOCK_CHRONOS_PROMOTION_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
             context.getString(R.string.playback_skip_reward_title),
             context.getString(R.string.playback_skip_reward_summary),
             ModuleSettings.KEY_SKIP_REWARD_AD_ENABLED,

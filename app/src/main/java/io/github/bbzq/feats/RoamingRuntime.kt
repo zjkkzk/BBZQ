@@ -6,6 +6,7 @@ import io.github.bbzq.ModuleSettingsBridge
 import io.github.bbzq.feats.hook.BottomBarHook
 import io.github.bbzq.feats.hook.AutoLikeHook
 import io.github.bbzq.feats.hook.AccessKeyHook
+import io.github.bbzq.feats.hook.ChronosPromotionHook
 import io.github.bbzq.feats.hook.DownloadThreadHook
 import io.github.bbzq.feats.hook.TeenagersModeHook
 import io.github.bbzq.feats.hook.TryFreeQualityHook
@@ -66,6 +67,7 @@ object RoamingRuntime {
                 ::StoryPlayerAdHook,
                 ::VideoDetailBannerAdHook,
                 ::TryFreeQualityHook,
+                ::ChronosPromotionHook,
                 ::SkipVideoAdHook,
                 ::SkipVideoAdProgressHook,
                 ::RewardAdHook,
