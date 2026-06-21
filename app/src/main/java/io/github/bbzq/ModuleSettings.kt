@@ -120,6 +120,10 @@ object ModuleSettings {
 
     @Volatile
     private var skipVideoAdCache: SkipVideoAdCache? = null
+    @Volatile
+    private var knownBottomBarItemsCache: Set<String>? = null
+    @Volatile
+    private var knownHomeRecommendItemsCache: Set<String>? = null
 
     fun isSkipSplashAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_SPLASH_AD_ENABLED, true)
@@ -208,7 +212,19 @@ object ModuleSettings {
         prefs.getStringSet(KEY_HIDDEN_HOME_RECOMMEND_ITEMS, emptySet()) ?: emptySet()
 
     fun getKnownHomeRecommendItems(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_KNOWN_HOME_RECOMMEND_ITEMS, emptySet()) ?: emptySet()
+        knownHomeRecommendItemsCache
+            ?: prefs.getStringSet(KEY_KNOWN_HOME_RECOMMEND_ITEMS, emptySet())
+            ?: emptySet()
+
+    fun refreshKnownHomeRecommendItemsCache(prefs: SharedPreferences): Set<String> =
+        prefs.getStringSet(KEY_KNOWN_HOME_RECOMMEND_ITEMS, emptySet())
+            ?.toSet()
+            .orEmpty()
+            .also { knownHomeRecommendItemsCache = it }
+
+    fun cacheKnownHomeRecommendItems(items: Set<String>) {
+        knownHomeRecommendItemsCache = items.toSet()
+    }
 
     fun isHideAllHomeComponentsEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, false)
@@ -263,7 +279,19 @@ object ModuleSettings {
         prefs.getStringSet(KEY_HIDDEN_BOTTOM_BAR_ITEMS, emptySet()) ?: emptySet()
 
     fun getKnownBottomBarItems(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_KNOWN_BOTTOM_BAR_ITEMS, emptySet()) ?: emptySet()
+        knownBottomBarItemsCache
+            ?: prefs.getStringSet(KEY_KNOWN_BOTTOM_BAR_ITEMS, emptySet())
+            ?: emptySet()
+
+    fun refreshKnownBottomBarItemsCache(prefs: SharedPreferences): Set<String> =
+        prefs.getStringSet(KEY_KNOWN_BOTTOM_BAR_ITEMS, emptySet())
+            ?.toSet()
+            .orEmpty()
+            .also { knownBottomBarItemsCache = it }
+
+    fun cacheKnownBottomBarItems(items: Set<String>) {
+        knownBottomBarItemsCache = items.toSet()
+    }
 
     fun isHideHomeTopBarPromotionEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_HIDE_HOME_TOP_BAR_PROMOTION_ENABLED, false)

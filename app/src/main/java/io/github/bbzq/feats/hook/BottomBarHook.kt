@@ -269,6 +269,7 @@ class BottomBarHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (items.isEmpty()) return
         val oldItems = ModuleSettings.getKnownBottomBarItems(prefs)
         if (oldItems == items) return
+        ModuleSettings.cacheKnownBottomBarItems(items)
         prefs.edit()
             .putStringSet(ModuleSettings.KEY_KNOWN_BOTTOM_BAR_ITEMS, items.toMutableSet())
             .apply()

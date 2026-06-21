@@ -216,6 +216,7 @@ class HomeComponentHideHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingH
         if (items.isEmpty()) return
         val snapshot = ModuleSettings.getKnownHomeRecommendItems(prefs)
         if (snapshot == items) return
+        ModuleSettings.cacheKnownHomeRecommendItems(items)
         prefs.edit()
             .putStringSet(ModuleSettings.KEY_KNOWN_HOME_RECOMMEND_ITEMS, items.toMutableSet())
             .apply()
