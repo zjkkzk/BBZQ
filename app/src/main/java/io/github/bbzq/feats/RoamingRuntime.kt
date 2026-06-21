@@ -8,6 +8,7 @@ import io.github.bbzq.feats.hook.AutoLikeHook
 import io.github.bbzq.feats.hook.AccessKeyHook
 import io.github.bbzq.feats.hook.DownloadThreadHook
 import io.github.bbzq.feats.hook.TeenagersModeHook
+import io.github.bbzq.feats.hook.TryFreeQualityHook
 import io.github.bbzq.feats.hook.FreeCopyHook
 import io.github.bbzq.feats.hook.HomeRecommendAdHook
 import io.github.bbzq.feats.hook.HomeRecommendAutoRefreshHook
@@ -64,6 +65,7 @@ object RoamingRuntime {
                 ::HomeComponentHideHook,
                 ::StoryPlayerAdHook,
                 ::VideoDetailBannerAdHook,
+                ::TryFreeQualityHook,
                 ::SkipVideoAdHook,
                 ::SkipVideoAdProgressHook,
                 ::RewardAdHook,

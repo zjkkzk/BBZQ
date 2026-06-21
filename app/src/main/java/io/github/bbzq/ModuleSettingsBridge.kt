@@ -59,7 +59,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
     private fun fallbackDefaults(): Map<String, Any?> = mapOf(
         ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED to true,
-        ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED to true,
+        ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED to false,
         ModuleSettings.KEY_FULL_NUMBER_FORMAT_ENABLED to false,
     )
 

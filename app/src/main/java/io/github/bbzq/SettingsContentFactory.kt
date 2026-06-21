@@ -380,12 +380,14 @@ class SettingsContentFactory(
         }
         val skipVisible = ModuleSettings.isSkipVideoAdSettingsVisible(prefs)
         val accessKeyVisible = ModuleSettings.isAccessKeySettingsVisible(prefs)
-        if (skipVisible || accessKeyVisible) {
+        val tryFreeQualityVisible = ModuleSettings.isTryFreeQualitySettingsVisible(prefs)
+        if (skipVisible || accessKeyVisible || tryFreeQualityVisible) {
             rows += createInfoRow(
                 context.getString(R.string.about_hidden_features_title),
                 buildString {
                     if (skipVisible) append(context.getString(R.string.section_skip_video_ad)).append(' ')
                     if (accessKeyVisible) append("AccessKey").append(' ')
+                    if (tryFreeQualityVisible) append(context.getString(R.string.unlock_video_features_title)).append(' ')
                     append(context.getString(R.string.about_hidden_features_summary, ""))
                 }
             )
@@ -412,6 +414,14 @@ class SettingsContentFactory(
                 handleAccessKeyClick()
             }
         }
+        if (tryFreeQualityVisible) {
+            rows += createSwitchRow(
+                context.getString(R.string.unlock_video_features_title),
+                context.getString(R.string.unlock_video_features_summary),
+                ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED,
+                false,
+            )
+        }
         return rows
     }
 
@@ -436,17 +446,19 @@ class SettingsContentFactory(
         val now = SystemClock.elapsedRealtime()
         val skipVisible = ModuleSettings.isSkipVideoAdSettingsVisible(prefs)
         val accessKeyVisible = ModuleSettings.isAccessKeySettingsVisible(prefs)
-        if (!(skipVisible && accessKeyVisible) && now - lastVersionTapAt <= DOUBLE_TAP_WINDOW_MS) {
+        val tryFreeQualityVisible = ModuleSettings.isTryFreeQualitySettingsVisible(prefs)
+        if (!(skipVisible && accessKeyVisible && tryFreeQualityVisible) && now - lastVersionTapAt <= DOUBLE_TAP_WINDOW_MS) {
             prefs.edit().apply {
                 if (!skipVisible) putBoolean(ModuleSettings.KEY_SKIP_VIDEO_AD_SETTINGS_VISIBLE, true)
                 if (!accessKeyVisible) putBoolean(ModuleSettings.KEY_ACCESS_KEY_SETTINGS_VISIBLE, true)
+                if (!tryFreeQualityVisible) putBoolean(ModuleSettings.KEY_TRY_FREE_QUALITY_SETTINGS_VISIBLE, true)
             }.apply()
             Toast.makeText(context, context.getString(R.string.version_hidden_entry_toast), Toast.LENGTH_SHORT).show()
             openPage(SettingsActivity.PAGE_ROOT)
             return
         }
         lastVersionTapAt = now
-        if (skipVisible || accessKeyVisible) {
+        if (skipVisible || accessKeyVisible || tryFreeQualityVisible) {
             showRuntimeEnvironmentDialog()
         }
     }

@@ -14,6 +14,7 @@ object ModuleSettings {
     const val KEY_SKIP_VIDEO_AD_MODE_PREFIX = "skip_video_ad_mode_"
     const val KEY_SKIP_VIDEO_AD_SETTINGS_VISIBLE = "skip_video_ad_settings_visible"
     const val KEY_ACCESS_KEY_SETTINGS_VISIBLE = "access_key_settings_visible"
+    const val KEY_TRY_FREE_QUALITY_SETTINGS_VISIBLE = "try_free_quality_settings_visible"
     const val KEY_BLOCK_VIDEO_DETAIL_BANNER_AD_ENABLED = "block_video_detail_banner_ad_enabled"
     const val KEY_UNLOCK_VIDEO_FEATURES_ENABLED = "unlock_video_features_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
@@ -105,7 +106,7 @@ object ModuleSettings {
         prefs.getBoolean(KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED, false)
 
     fun isUnlockVideoFeaturesEnabled(prefs: SharedPreferences): Boolean =
-        prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, true)
+        prefs.getBoolean(KEY_UNLOCK_VIDEO_FEATURES_ENABLED, false)
 
     fun isSkipVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_VIDEO_AD_ENABLED, false)
@@ -139,6 +140,9 @@ object ModuleSettings {
 
     fun isAccessKeySettingsVisible(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_ACCESS_KEY_SETTINGS_VISIBLE, false)
+
+    fun isTryFreeQualitySettingsVisible(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_TRY_FREE_QUALITY_SETTINGS_VISIBLE, false)
 
     fun isBlockVideoDetailBannerAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_BLOCK_VIDEO_DETAIL_BANNER_AD_ENABLED, false)
