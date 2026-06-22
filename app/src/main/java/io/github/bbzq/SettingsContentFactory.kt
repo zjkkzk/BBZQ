@@ -47,7 +47,8 @@ class SettingsContentFactory(
     private lateinit var storyVideoAdSwitch: Switch
     private lateinit var skipVideoAdAutoLikeSwitch: Switch
     private lateinit var blockedCountView: TextView
-    private var lastVersionTapAt = 0L
+    private var versionTapCount = 0
+    private var firstVersionTapAt = 0L
     private var refreshing = false
 
     fun createScrollView(): ScrollView {
@@ -70,6 +71,11 @@ class SettingsContentFactory(
                 pageRoot.addView(createSectionCard(skipVideoAdCategoryRows()))
                 pageRoot.addView(createSectionLabel(context.getString(R.string.section_thanks)))
                 pageRoot.addView(createSectionCard(skipVideoAdCreditRows()))
+            }
+
+            SettingsActivity.PAGE_HIDDEN_FEATURES -> {
+                pageRoot.addView(createSectionLabel(context.getString(R.string.about_hidden_features_title)))
+                pageRoot.addView(createSectionCard(hiddenFeaturesRows()))
             }
 
             else -> {
@@ -102,6 +108,11 @@ class SettingsContentFactory(
 
                 pageRoot.addView(createSectionLabel(context.getString(R.string.section_story_purify)))
                 pageRoot.addView(createSectionCard(storyRows()))
+
+                if (hasHiddenFeatures()) {
+                    pageRoot.addView(createSectionLabel(context.getString(R.string.about_hidden_features_title)))
+                    pageRoot.addView(createSectionCard(hiddenFeaturesEntryRows()))
+                }
 
                 pageRoot.addView(createSectionLabel(context.getString(R.string.section_about)))
                 pageRoot.addView(createSectionCard(aboutRows()))
@@ -530,20 +541,25 @@ class SettingsContentFactory(
         ) {
             handleVersionRowClick()
         }
+        return rows
+    }
+
+    private fun hiddenFeaturesEntryRows(): List<View> {
+        return listOf(
+            createClickableInfoRow(
+                context.getString(R.string.hidden_features_entry_title),
+                "",
+            ) {
+                openPage(SettingsActivity.PAGE_HIDDEN_FEATURES)
+            },
+        )
+    }
+
+    private fun hiddenFeaturesRows(): List<View> {
+        val rows = mutableListOf<View>()
         val skipVisible = ModuleSettings.isSkipVideoAdSettingsVisible(prefs)
         val accessKeyVisible = ModuleSettings.isAccessKeySettingsVisible(prefs)
         val tryFreeQualityVisible = ModuleSettings.isTryFreeQualitySettingsVisible(prefs)
-        if (skipVisible || accessKeyVisible || tryFreeQualityVisible) {
-            rows += createInfoRow(
-                context.getString(R.string.about_hidden_features_title),
-                buildString {
-                    if (skipVisible) append(context.getString(R.string.section_skip_video_ad)).append(' ')
-                    if (accessKeyVisible) append("AccessKey").append(' ')
-                    if (tryFreeQualityVisible) append(context.getString(R.string.unlock_video_features_title)).append(' ')
-                    append(context.getString(R.string.about_hidden_features_summary, ""))
-                }
-            )
-        }
         if (skipVisible) {
             rows += createClickableInfoRow(
                 context.getString(R.string.about_skip_video_ad_switch_title),
@@ -599,21 +615,36 @@ class SettingsContentFactory(
         val skipVisible = ModuleSettings.isSkipVideoAdSettingsVisible(prefs)
         val accessKeyVisible = ModuleSettings.isAccessKeySettingsVisible(prefs)
         val tryFreeQualityVisible = ModuleSettings.isTryFreeQualitySettingsVisible(prefs)
-        if (!(skipVisible && accessKeyVisible && tryFreeQualityVisible) && now - lastVersionTapAt <= DOUBLE_TAP_WINDOW_MS) {
+
+        if (now - firstVersionTapAt > VERSION_TAP_WINDOW_MS) {
+            versionTapCount = 0
+            firstVersionTapAt = now
+        }
+
+        versionTapCount += 1
+
+        if (!(skipVisible && accessKeyVisible && tryFreeQualityVisible) && versionTapCount >= 4) {
             prefs.edit().apply {
                 if (!skipVisible) putBoolean(ModuleSettings.KEY_SKIP_VIDEO_AD_SETTINGS_VISIBLE, true)
                 if (!accessKeyVisible) putBoolean(ModuleSettings.KEY_ACCESS_KEY_SETTINGS_VISIBLE, true)
                 if (!tryFreeQualityVisible) putBoolean(ModuleSettings.KEY_TRY_FREE_QUALITY_SETTINGS_VISIBLE, true)
             }.apply()
             Toast.makeText(context, context.getString(R.string.version_hidden_entry_toast), Toast.LENGTH_SHORT).show()
+            versionTapCount = 0
+            firstVersionTapAt = 0L
             openPage(SettingsActivity.PAGE_ROOT)
             return
         }
-        lastVersionTapAt = now
+
         if (skipVisible || accessKeyVisible || tryFreeQualityVisible) {
             showRuntimeEnvironmentDialog()
         }
     }
+
+    private fun hasHiddenFeatures(): Boolean =
+        ModuleSettings.isSkipVideoAdSettingsVisible(prefs) ||
+            ModuleSettings.isAccessKeySettingsVisible(prefs) ||
+            ModuleSettings.isTryFreeQualitySettingsVisible(prefs)
 
     private fun handleAccessKeyClick() {
         val key = AccessKeyRepository.read(prefs)
@@ -717,12 +748,14 @@ class SettingsContentFactory(
                 textSize = 15f
                 setTextColor(TITLE_COLOR)
             })
-            addView(TextView(context).apply {
-                text = summary
-                textSize = 12f
-                setTextColor(SUMMARY_COLOR)
-                setPadding(0, dp(4), 0, 0)
-            })
+            if (summary.isNotBlank()) {
+                addView(TextView(context).apply {
+                    text = summary
+                    textSize = 12f
+                    setTextColor(SUMMARY_COLOR)
+                    setPadding(0, dp(4), 0, 0)
+                })
+            }
         }
     }
 
@@ -1263,6 +1296,6 @@ class SettingsContentFactory(
         private val SUMMARY_COLOR = Color.parseColor("#9499A0")
         private val DISABLE_CONFIRM_COLOR = Color.parseColor("#F6B000")
         private val CANCEL_ACTION_COLOR = Color.parseColor("#00A1D6")
-        private const val DOUBLE_TAP_WINDOW_MS = 400L
+        private const val VERSION_TAP_WINDOW_MS = 1500L
     }
 }

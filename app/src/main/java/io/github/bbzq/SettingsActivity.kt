@@ -61,6 +61,20 @@ class SettingsActivity : Activity() {
         recreate()
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        val page = intent.getStringExtra(EXTRA_PAGE) ?: PAGE_ROOT
+        if (page == PAGE_HIDDEN_FEATURES) {
+            ModuleSettingsNavigator.open(
+                context = this,
+                runtimeValues = intent.getBundleExtra(RuntimeEnvironmentInfo.EXTRA_RUNTIME_VALUES),
+                page = PAGE_ROOT,
+            )
+            return
+        }
+        finish()
+    }
+
     private fun createToolbar(page: String): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -77,7 +91,7 @@ class SettingsActivity : Activity() {
             })
 
             addView(TextView(this@SettingsActivity).apply {
-                text = "完成"
+                text = getString(R.string.settings_done)
                 textSize = 15f
                 setTextColor(Color.parseColor("#FB7299"))
                 isClickable = true
@@ -89,9 +103,10 @@ class SettingsActivity : Activity() {
     }
 
     private fun toolbarTitle(page: String): String = when (page) {
-        PAGE_SKIP_VIDEO_AD_SWITCH -> "空降助手功能开关"
-        PAGE_SKIP_VIDEO_AD_CATEGORY -> "空降助手分类设定"
-        else -> "BBZQ 设置"
+        PAGE_SKIP_VIDEO_AD_SWITCH -> getString(R.string.about_skip_video_ad_switch_title)
+        PAGE_SKIP_VIDEO_AD_CATEGORY -> getString(R.string.about_skip_video_ad_category_title)
+        PAGE_HIDDEN_FEATURES -> getString(R.string.about_hidden_features_title)
+        else -> getString(R.string.settings_title)
     }
 
     private fun applyWindowInsets(
@@ -135,5 +150,6 @@ class SettingsActivity : Activity() {
         const val PAGE_ROOT = "root"
         const val PAGE_SKIP_VIDEO_AD_SWITCH = "skip_video_ad_switch"
         const val PAGE_SKIP_VIDEO_AD_CATEGORY = "skip_video_ad_category"
+        const val PAGE_HIDDEN_FEATURES = "hidden_features"
     }
 }

@@ -186,9 +186,11 @@
     <string name="about_skip_video_ad_category_summary">进入 SponsorBlock 分类选择页。</string>
     <string name="about_access_key_title">获取 AccessKey</string>
     <string name="about_access_key_summary">点击尝试获取当前登录账号的 AccessKey。</string>
+    <string name="hidden_features_entry_title">隐藏功能入口</string>
 
     <!-- 對話框 / Toast -->
     <string name="version_hidden_entry_toast">已显示隐藏入口</string>
+    <string name="settings_done">完成</string>
     <string name="access_key_error_title">获取失败</string>
     <string name="access_key_error_message">尚未获取到 AccessKey。请确保：\n1. 已在 B 站登录账号\n2. 已在 B 站中正常使用（刷几个视频）\n3. 如果还是没有，请清除应用缓存重试或反馈 Issue</string>
     <string name="access_key_title">当前 AccessKey</string>
