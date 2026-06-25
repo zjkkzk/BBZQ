@@ -160,7 +160,22 @@ object RuntimeEnvironmentInfo {
             ModuleSettings.KEY_RUNTIME_PATCH_MODE to classifyPatchMode(hostContext, sourceKind),
             ModuleSettings.KEY_RUNTIME_PROCESS_NAME to processName.ifBlank { UNKNOWN },
             ModuleSettings.KEY_RUNTIME_LAST_UPDATE_TIME to System.currentTimeMillis().toString(),
-        )
+        ).apply {
+            putAll(scanStatusSnapshotValues(hostContext))
+        }
+    }
+
+    private fun scanStatusSnapshotValues(hostContext: Context): Map<String, String> {
+        val prefs = hostContext.getSharedPreferences(ModuleSettingsBridge.HOST_SNAPSHOT_PREFS_NAME, Context.MODE_PRIVATE)
+        return listOf(
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_SUMMARY,
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_REPORT,
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT,
+        ).mapNotNull { key ->
+            prefs.getString(key, null)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { key to it }
+        }.toMap()
     }
 
     private fun packageVersionOrNull(context: Context, packageName: String): VersionInfo? =

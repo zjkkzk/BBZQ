@@ -13,6 +13,7 @@ import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
     private const val TAG = "BBZQ"
@@ -89,45 +90,45 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
             }
             return
         }
-        runCatching {
-            if (currentService.apiVersion < XposedService.API_102) {
-                fail(callback, "当前框架不支持 API102 热重载")
-                return
-            }
-            val runningTargets = currentService.runningTargets
-            Log.i(TAG, "symbol cache refresh runningTargets=${runningTargets.joinToString { "${it.processName}:${it.state}" }}")
-            val targets = runningTargets
-                .filter {
-                    it.state != HookedTarget.State.RELOADING &&
-                        it.processName.isSymbolResolverBiliProcess()
+        thread(name = HOT_RELOAD_THREAD_NAME, isDaemon = true) {
+            runCatching {
+                if (currentService.apiVersion < XposedService.API_102) {
+                    fail(callback, "当前框架不支持 API102 热重载")
+                    return@thread
                 }
-                .sortedWith(
-                    compareBy<HookedTarget> { !it.processName.isSymbolResolverBiliProcess() }
-                        .thenBy { it.processName.processPriority() }
-                        .thenBy { it.processName },
+                val runningTargets = currentService.runningTargets
+                Log.i(
+                    TAG,
+                    "symbol cache refresh runningTargets=${runningTargets.joinToString { "${it.processName}:${it.state}" }}",
                 )
-            if (targets.isEmpty()) {
-                fail(callback, "未找到正在运行的 B 站进程")
-                return
+                val targets = runningTargets
+                    .filter {
+                        it.state != HookedTarget.State.RELOADING &&
+                            it.processName.isSymbolResolverBiliProcess()
+                    }
+                    .sortedWith(
+                        compareBy<HookedTarget> { it.processName.processPriority() }
+                            .thenBy { it.processName },
+                    )
+                if (targets.isEmpty()) {
+                    fail(callback, "未找到正在运行的 B 站进程")
+                    return@thread
+                }
+                val targetProcessNames = targets
+                    .map { it.processName }
+                    .distinct()
+                Log.i(TAG, "symbol cache refresh targets=${targetProcessNames.joinToString()}")
+                hotReloadTargets(
+                    service = currentService,
+                    targetProcessNames = targetProcessNames,
+                    requestId = UUID.randomUUID().toString(),
+                    index = 0,
+                    results = mutableListOf(),
+                    callback = callback,
+                )
+            }.onFailure {
+                fail(callback, "请求热重载失败：${it.javaClass.simpleName}: ${it.message}")
             }
-            if (!targets.first().processName.isSymbolResolverBiliProcess()) {
-                fail(callback, "未找到可执行符号重扫的 B 站主进程或下载进程")
-                return
-            }
-            val targetProcessNames = targets
-                .map { it.processName }
-                .distinct()
-            Log.i(TAG, "symbol cache refresh targets=${targetProcessNames.joinToString()}")
-            hotReloadTargets(
-                service = currentService,
-                targetProcessNames = targetProcessNames,
-                requestId = UUID.randomUUID().toString(),
-                index = 0,
-                results = mutableListOf(),
-                callback = callback,
-            )
-        }.onFailure {
-            fail(callback, "请求热重载失败：${it.javaClass.simpleName}: ${it.message}")
         }
     }
 
@@ -202,6 +203,7 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
         val completed = AtomicBoolean(false)
         val timeout = Runnable {
             if (completed.compareAndSet(false, true)) {
+                Log.w(TAG, "hot reload ${target.processName} timeout")
                 results += SymbolCacheRefreshTargetResult(target.processName, "TIMEOUT", "等待 API102 热重载回调超时")
                 dispatch(
                     callback,
@@ -220,27 +222,49 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
                 "hot reload target=${target.processName}, state=${target.state}, forceSymbolRescan=$forceSymbolRescan",
             )
             mainHandler.postDelayed(timeout, timeoutMs)
-            service.hotReloadModule(target, extras) { _, result ->
-                mainHandler.post {
-                    if (!completed.compareAndSet(false, true)) return@post
-                    mainHandler.removeCallbacks(timeout)
-                    val targetResult = SymbolCacheRefreshTargetResult(
-                        processName = target.processName,
-                        status = result.status().name,
-                        message = result.message(),
-                    )
-                    results += targetResult
-                    if (
-                        result.status() == HotReloadResult.Status.SUCCEEDED ||
-                        result.status() == HotReloadResult.Status.PROCESS_DIED && !forceSymbolRescan
-                    ) {
-                        hotReloadTargets(service, targetProcessNames, requestId, index + 1, results, callback)
-                    } else {
+            thread(name = HOT_RELOAD_THREAD_NAME, isDaemon = true) {
+                runCatching {
+                    service.hotReloadModule(target, extras) { _, result ->
+                        mainHandler.post {
+                            if (!completed.compareAndSet(false, true)) return@post
+                            mainHandler.removeCallbacks(timeout)
+                            val targetResult = SymbolCacheRefreshTargetResult(
+                                processName = target.processName,
+                                status = result.status().name,
+                                message = result.message(),
+                            )
+                            Log.i(TAG, "hot reload result ${target.processName}: ${targetResult.detail}")
+                            results += targetResult
+                            if (
+                                result.status() == HotReloadResult.Status.SUCCEEDED ||
+                                result.status() == HotReloadResult.Status.PROCESS_DIED && !forceSymbolRescan
+                            ) {
+                                thread(name = HOT_RELOAD_THREAD_NAME, isDaemon = true) {
+                                    hotReloadTargets(service, targetProcessNames, requestId, index + 1, results, callback)
+                                }
+                            } else {
+                                dispatch(
+                                    callback,
+                                    SymbolCacheRefreshResult(
+                                        success = false,
+                                        message = "热重载 ${target.processName} 失败：${targetResult.detail}",
+                                        targetResults = results,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    Log.i(TAG, "hot reload request submitted target=${target.processName}")
+                }.onFailure {
+                    mainHandler.post {
+                        if (!completed.compareAndSet(false, true)) return@post
+                        mainHandler.removeCallbacks(timeout)
+                        results += SymbolCacheRefreshTargetResult(target.processName, "ERROR", it.message)
                         dispatch(
                             callback,
                             SymbolCacheRefreshResult(
                                 success = false,
-                                message = "热重载 ${target.processName} 失败：${targetResult.detail}",
+                                message = "热重载 ${target.processName} 失败：${it.javaClass.simpleName}: ${it.message}",
                                 targetResults = results,
                             ),
                         )
@@ -335,9 +359,9 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
             it.status == "SKIPPED" || it.status == HotReloadResult.Status.PROCESS_DIED.name
         }
         return if (skipped > 0) {
-            "已完成缓存重扫，已重载 ${reloaded} 个进程，跳过 ${skipped} 个已退出进程"
+            "完成混淆重扫，已重载 ${reloaded} 个进程，跳过 ${skipped} 个已退出进程"
         } else {
-            "已完成缓存重扫，已重载 ${reloaded} 个进程"
+            "完成混淆重扫，已重载 ${reloaded} 个进程"
         }
     }
 
@@ -350,6 +374,7 @@ object ModuleRemotePreferences : XposedServiceHelper.OnServiceListener {
 
     private const val HOT_RELOAD_TIMEOUT_MS = 30_000L
     private const val HOT_RELOAD_FORCE_TIMEOUT_MS = 180_000L
+    private const val HOT_RELOAD_THREAD_NAME = "BBZQ-HotReload"
     private const val SERVICE_WAIT_RETRY_MS = 500L
     private const val SERVICE_WAIT_MAX_ATTEMPTS = 10
 }

@@ -286,6 +286,25 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
     }
 
+    private fun persistHostSnapshotUpdates(values: Map<String, Any?>) {
+        if (values.isEmpty()) return
+        val prefs = resolveHostSnapshotPreferences() ?: return
+        runCatching {
+            val editor = prefs.edit()
+            values.forEach { (key, value) ->
+                if (value == null) {
+                    editor.remove(key)
+                } else {
+                    editor.applyValue(key, value)
+                }
+            }
+            editor.apply()
+        }.onFailure {
+            lastProviderStatus = "snapshot update ${it.javaClass.simpleName}: ${it.message}"
+            Log.w(LOG_TAG, "runtime settings snapshot update failed", it)
+        }
+    }
+
     private fun cacheRuntimeValue(key: String?, value: Any) {
         if (key == null) return
         var snapshotToPersist: Map<String, Any>? = null
@@ -302,9 +321,11 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
     private inner class Editor : SharedPreferences.Editor {
         private val operations = mutableListOf<() -> Unit>()
         private val cacheUpdates = mutableListOf<(MutableMap<String, Any>) -> Unit>()
+        private val hostSnapshotUpdateKeys = linkedSetOf<String>()
         private var clearRequested = false
 
         override fun putString(key: String?, value: String?): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_STRING,
@@ -323,6 +344,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
             key: String?,
             values: MutableSet<String>?,
         ): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_STRING_SET,
@@ -340,6 +362,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
         override fun putInt(key: String?, value: Int): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_INT,
@@ -352,6 +375,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
         override fun putLong(key: String?, value: Long): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_STRING,
@@ -364,6 +388,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
         override fun putFloat(key: String?, value: Float): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_STRING,
@@ -376,6 +401,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
         override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += {
                 call(
                     ModuleSettingsProvider.METHOD_PUT_BOOLEAN,
@@ -388,6 +414,7 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
         }
 
         override fun remove(key: String?): SharedPreferences.Editor = apply {
+            recordHostSnapshotUpdate(key)
             operations += { call(ModuleSettingsProvider.METHOD_REMOVE, key, null, recordStatus = false) }
             cacheUpdates += { cache -> if (key != null) cache.remove(key) }
         }
@@ -411,26 +438,42 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
             operations.forEach { it() }
 
             var snapshotToPersist: Map<String, Any>? = null
+            var snapshotUpdatesToPersist: Map<String, Any?>? = null
             synchronized(cacheLock) {
                 val updated = if (clearRequested) mutableMapOf() else localCache.toMutableMap()
                 cacheUpdates.forEach { it(updated) }
                 localCache = updated
                 lastLoadTime = System.currentTimeMillis()
-                if (hasAuthoritativeSnapshot) snapshotToPersist = updated
+                if (hasAuthoritativeSnapshot) {
+                    snapshotToPersist = updated
+                } else if (!clearRequested && hostSnapshotUpdateKeys.isNotEmpty()) {
+                    snapshotUpdatesToPersist = hostSnapshotUpdateKeys.associateWith { updated[it] }
+                }
             }
             snapshotToPersist?.let(::persistHostSnapshot)
+            snapshotUpdatesToPersist?.let(::persistHostSnapshotUpdates)
 
             operations.clear()
             cacheUpdates.clear()
+            hostSnapshotUpdateKeys.clear()
             clearRequested = false
+        }
+
+        private fun recordHostSnapshotUpdate(key: String?) {
+            if (key != null && key in HOST_SNAPSHOT_UPDATE_KEYS) hostSnapshotUpdateKeys += key
         }
     }
 
     companion object {
         private const val CACHE_EXPIRATION = 5000L
         private const val MODULE_PACKAGE = "io.github.bbzq"
-        private const val HOST_SNAPSHOT_PREFS_NAME = "bbzq_runtime_settings_snapshot"
+        const val HOST_SNAPSHOT_PREFS_NAME = "bbzq_runtime_settings_snapshot"
         private const val LOG_TAG = "BBZQ"
+        private val HOST_SNAPSHOT_UPDATE_KEYS = setOf(
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_SUMMARY,
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_REPORT,
+            ModuleSettings.KEY_SYMBOL_SCAN_STATUS_UPDATED_AT,
+        )
         private var cachedContext = WeakReference<Context>(null)
         private var cachedXposed: XposedInterface? = null
         private var cachedRemotePrefs = WeakReference<SharedPreferences>(null)
@@ -487,15 +530,19 @@ class ModuleSettingsBridge private constructor() : SharedPreferences {
 
 private fun SharedPreferences.Editor.applyValues(values: Map<String, Any>): SharedPreferences.Editor = apply {
     values.forEach { (key, value) ->
-        when (value) {
-            is Boolean -> putBoolean(key, value)
-            is Int -> putInt(key, value)
-            is Long -> putLong(key, value)
-            is Float -> putFloat(key, value)
-            is String -> putString(key, value)
-            is Set<*> -> putStringSet(key, value.map { it.toString() }.toSet())
-            is List<*> -> putStringSet(key, value.map { it.toString() }.toSet())
-            else -> putString(key, value.toString())
-        }
+        applyValue(key, value)
+    }
+}
+
+private fun SharedPreferences.Editor.applyValue(key: String, value: Any): SharedPreferences.Editor = apply {
+    when (value) {
+        is Boolean -> putBoolean(key, value)
+        is Int -> putInt(key, value)
+        is Long -> putLong(key, value)
+        is Float -> putFloat(key, value)
+        is String -> putString(key, value)
+        is Set<*> -> putStringSet(key, value.map { it.toString() }.toSet())
+        is List<*> -> putStringSet(key, value.map { it.toString() }.toSet())
+        else -> putString(key, value.toString())
     }
 }

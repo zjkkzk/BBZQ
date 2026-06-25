@@ -1,5 +1,6 @@
 package io.github.bbzq
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
@@ -744,25 +745,46 @@ class SettingsContentFactory(
     }
 
     private fun startSymbolCacheRefresh() {
-        val progress = AlertDialog.Builder(context)
-            .setTitle(R.string.symbol_cache_refresh_running_title)
-            .setMessage(R.string.symbol_cache_refresh_running_message)
-            .setCancelable(false)
-            .show()
+        val appContext = context.applicationContext ?: context
+        val hostLaunched = launchHostApp()
+        Toast.makeText(appContext, R.string.symbol_cache_refresh_running_toast, Toast.LENGTH_SHORT).show()
+        if (hostLaunched) {
+            (context as? Activity)?.finish()
+        }
         ModuleRemotePreferences.requestSymbolCacheRefresh { result ->
-            progress.dismiss()
-            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-            if (::symbolScanStatusSummary.isInitialized) {
+            Toast.makeText(appContext, result.message, Toast.LENGTH_LONG).show()
+            if (::symbolScanStatusSummary.isInitialized && !isActivityFinishing()) {
                 symbolScanStatusSummary.text = symbolScanSummary()
             }
-            if (!result.success && result.targetResults.isNotEmpty()) {
-                AlertDialog.Builder(context)
-                    .setTitle(R.string.symbol_cache_refresh_failed_title)
-                    .setMessage(result.targetResults.joinToString("\n") { "${it.processName}: ${it.detail}" })
-                    .setPositiveButton(R.string.runtime_environment_ok, null)
-                    .show()
-            }
         }
+    }
+
+    private fun launchHostApp(): Boolean {
+        val packages = sequenceOf(
+            prefs.getString(ModuleSettings.KEY_RUNTIME_HOST_PACKAGE, null),
+            "tv.danmaku.bili",
+            "com.bilibili.app.in",
+            "tv.danmaku.bilibilihd",
+            "com.bilibili.app.blue",
+        ).filterNotNull().distinct()
+        val intent = packages.firstNotNullOfOrNull { packageName ->
+            context.packageManager.getLaunchIntentForPackage(packageName)
+        } ?: return false
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+        )
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun isActivityFinishing(): Boolean {
+        val activity = context as? Activity ?: return false
+        return activity.isFinishing || activity.isDestroyed
     }
 
     private fun symbolScanSummary(): String {

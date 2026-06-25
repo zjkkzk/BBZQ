@@ -25,6 +25,9 @@ object DexKitBridgeProvider {
     @Volatile
     private var nativeLibraryLoadError: String? = null
 
+    private val nativeLibraryLoaderKey: String =
+        Integer.toHexString(System.identityHashCode(DexKitBridgeProvider::class.java.classLoader))
+
     fun openFirstAvailable(
         hostContext: Context,
         moduleContext: Context?,
@@ -145,7 +148,7 @@ object DexKitBridgeProvider {
         val fingerprint = "${moduleApk.length()}_${moduleApk.lastModified()}".filter {
             it.isLetterOrDigit() || it == '_'
         }
-        val baseDir = File(hostContext.codeCacheDir, "$EXTRACTED_LIBRARY_DIR/$fingerprint")
+        val baseDir = File(hostContext.codeCacheDir, "$EXTRACTED_LIBRARY_DIR/$fingerprint/$nativeLibraryLoaderKey")
         ZipFile(moduleApk).use { zip ->
             for (abi in android.os.Build.SUPPORTED_ABIS.toList()) {
                 val entry = zip.getEntry("lib/$abi/$DEXKIT_LIBRARY_FILE_NAME") ?: continue
@@ -180,4 +183,3 @@ object DexKitBridgeProvider {
 
 internal fun Throwable.scanMessage(): String =
     "${javaClass.name}: ${message.orEmpty()}".replace('\n', ' ').take(420)
-

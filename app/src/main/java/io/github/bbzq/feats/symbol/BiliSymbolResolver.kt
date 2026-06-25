@@ -164,9 +164,6 @@ object BiliSymbolResolver {
         val fingerprint = buildFingerprint(appContext)
         val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         memorySymbols = null
-        runCatching {
-            prefs.edit().clear().commit()
-        }.onFailure { log("BiliSymbolResolver cache clear failed", it) }
 
         log("BiliSymbolResolver force scan begin fp=$fingerprint", null)
         val scanned = scan(

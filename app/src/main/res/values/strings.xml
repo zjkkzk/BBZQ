@@ -205,9 +205,7 @@
     <string name="symbol_cache_refresh_dialog_title">混淆扫描缓存</string>
     <string name="symbol_cache_refresh_dialog_message">当前扫描结果：\n%1$s\n\n</string>
     <string name="symbol_cache_refresh_confirm">清除并重扫</string>
-    <string name="symbol_cache_refresh_running_title">正在更新缓存</string>
-    <string name="symbol_cache_refresh_running_message">正在请求 B 站进程热重载并刷新混淆扫描缓存。</string>
-    <string name="symbol_cache_refresh_failed_title">刷新失败</string>
+    <string name="symbol_cache_refresh_running_toast">正在重新混淆扫描</string>
 
     <!-- 對話框 / Toast -->
     <string name="version_hidden_entry_toast">已显示隐藏入口</string>
