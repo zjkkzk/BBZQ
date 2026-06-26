@@ -87,7 +87,7 @@ data class BiliHookSymbols(
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 18
+        const val CACHE_SCHEMA_VERSION = 19
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -141,7 +141,7 @@ data class BiliHookSymbols(
 }
 
 object DexKitRuleVersions {
-    const val CURRENT = 33
+    const val CURRENT = 34
 }
 
 data class HookPointStatus(
@@ -1017,6 +1017,7 @@ data class VideoDetailBannerAdSymbols(
     val underPlayerTypeName: String?,
     val relateTypeName: String?,
     val merchandiseTypeName: String?,
+    val relateGameComponentTypeName: String?,
     val simpleViewEntryConstructor: ConstructorDescriptor?,
     val createViewEntry: MethodDescriptor?,
     val bindToView: MethodDescriptor?,
@@ -1029,6 +1030,7 @@ data class VideoDetailBannerAdSymbols(
         .putOpt("underPlayerTypeName", underPlayerTypeName)
         .putOpt("relateTypeName", relateTypeName)
         .putOpt("merchandiseTypeName", merchandiseTypeName)
+        .putOpt("relateGameComponentTypeName", relateGameComponentTypeName)
         .putOpt("simpleViewEntryConstructor", simpleViewEntryConstructor?.toJson())
         .putOpt("createViewEntry", createViewEntry?.toJson())
         .putOpt("bindToView", bindToView?.toJson())
@@ -1044,6 +1046,7 @@ data class VideoDetailBannerAdSymbols(
         val underPlayerType = underPlayerTypeName?.let(classLoader::loadClassOrNull)
         val relateType = relateTypeName?.let(classLoader::loadClassOrNull)
         val merchandiseType = merchandiseTypeName?.let(classLoader::loadClassOrNull)
+        val relateGameComponentType = relateGameComponentTypeName?.let(classLoader::loadClassOrNull)
         if (getVideoDetail != null && (getVideoDetailMethod == null || videoDetailType == null || underPlayerType == null)) {
             return null
         }
@@ -1064,7 +1067,7 @@ data class VideoDetailBannerAdSymbols(
             val owner = classLoader.loadClassOrNull(descriptor.declaringClassName) ?: return@let null
             descriptor.restore(owner)?.get(null)
         }
-        if (createViewEntry != null && (constructor == null || create == null || bind == null || unit == null)) {
+        if (createViewEntry != null && (relateGameComponentType == null || constructor == null || create == null || bind == null || unit == null)) {
             return null
         }
 
@@ -1074,6 +1077,7 @@ data class VideoDetailBannerAdSymbols(
             underPlayerType = underPlayerType,
             relateType = relateType,
             merchandiseType = merchandiseType,
+            relateGameComponentType = relateGameComponentType,
             simpleViewEntryConstructor = constructor,
             createViewEntry = create,
             bindToView = bind,
@@ -1088,6 +1092,7 @@ data class VideoDetailBannerAdSymbols(
             underPlayerTypeName = obj.optString("underPlayerTypeName").takeIf { it.isNotBlank() },
             relateTypeName = obj.optString("relateTypeName").takeIf { it.isNotBlank() },
             merchandiseTypeName = obj.optString("merchandiseTypeName").takeIf { it.isNotBlank() },
+            relateGameComponentTypeName = obj.optString("relateGameComponentTypeName").takeIf { it.isNotBlank() },
             simpleViewEntryConstructor = obj.optJSONObject("simpleViewEntryConstructor")?.let(ConstructorDescriptor::fromJson),
             createViewEntry = obj.optJSONObject("createViewEntry")?.let(MethodDescriptor::fromJson),
             bindToView = obj.optJSONObject("bindToView")?.let(MethodDescriptor::fromJson),
@@ -1103,6 +1108,7 @@ data class RestoredVideoDetailBannerAdSymbols(
     val underPlayerType: Class<*>?,
     val relateType: Class<*>?,
     val merchandiseType: Class<*>?,
+    val relateGameComponentType: Class<*>?,
     val simpleViewEntryConstructor: Constructor<*>?,
     val createViewEntry: Method?,
     val bindToView: Method?,

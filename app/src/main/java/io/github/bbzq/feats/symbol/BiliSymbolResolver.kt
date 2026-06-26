@@ -296,7 +296,7 @@ object BiliSymbolResolver {
             scanStoryComponentAlpha(classLoader)
         }
         val videoDetailBannerAd = scanHookPoint(HP_VIDEO_DETAIL_BANNER_AD, hookPoints, scanErrors, log) {
-            scanVideoDetailBannerAd(classLoader)
+            scanVideoDetailBannerAd(classLoader, ::bridge)
         }
         val commentPicture = scanHookPoint(HP_COMMENT_PICTURE, hookPoints, scanErrors, log) {
             scanCommentPicture(classLoader)
@@ -1549,6 +1549,7 @@ object BiliSymbolResolver {
 
     private fun scanVideoDetailBannerAd(
         classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
     ): SymbolScanResult<VideoDetailBannerAdSymbols> {
         val bizKt = classLoader.loadClassOrNull(G_AD_BIZ_KT)
         val videoDetailType = classLoader.loadClassOrNull(G_AD_VIDEO_DETAIL)
@@ -1567,6 +1568,15 @@ object BiliSymbolResolver {
         }
 
         val baseComponent = classLoader.loadClassOrNull(GEMINI_BINDING_COMPONENT)
+        val viewBindingClass = classLoader.loadClassOrNull(ANDROIDX_VIEW_BINDING)
+        val relateGameComponent = if (baseComponent != null && viewBindingClass != null) {
+            findRelateGameComponentClass(classLoader, bridge, baseComponent, viewBindingClass)
+        } else {
+            RelateGameComponentScan(
+                type = null,
+                evidence = "base=${baseComponent != null},viewBinding=${viewBindingClass != null}",
+            )
+        }
         val simpleViewEntry = classLoader.loadClassOrNull(GEMINI_SIMPLE_VIEW_ENTRY)
         val simpleViewEntryConstructor = simpleViewEntry?.declaredConstructors?.firstOrNull {
             it.parameterTypes.contentEquals(arrayOf(View::class.java))
@@ -1592,7 +1602,8 @@ object BiliSymbolResolver {
         val hasRelateGameHook = simpleViewEntryConstructor != null &&
             createViewEntry != null &&
             bindToView != null &&
-            unitField != null
+            unitField != null &&
+            relateGameComponent.type != null
         if (!hasProxyHook && !hasRelateGameHook) {
             return SymbolScanResult.Missing("video detail banner hook points not found")
         }
@@ -1603,11 +1614,16 @@ object BiliSymbolResolver {
             underPlayerTypeName = if (hasProxyHook) underPlayerType?.name else null,
             relateTypeName = relateType?.name,
             merchandiseTypeName = merchandiseType?.name,
-            simpleViewEntryConstructor = simpleViewEntryConstructor?.let(ConstructorDescriptor::of),
-            createViewEntry = createViewEntry?.let(MethodDescriptor::of),
-            bindToView = bindToView?.let(MethodDescriptor::of),
+            relateGameComponentTypeName = if (hasRelateGameHook) relateGameComponent.type?.name else null,
+            simpleViewEntryConstructor = if (hasRelateGameHook) {
+                simpleViewEntryConstructor?.let(ConstructorDescriptor::of)
+            } else {
+                null
+            },
+            createViewEntry = if (hasRelateGameHook) createViewEntry?.let(MethodDescriptor::of) else null,
+            bindToView = if (hasRelateGameHook) bindToView?.let(MethodDescriptor::of) else null,
             kotlinUnitField = if (hasRelateGameHook) unitField?.let(FieldDescriptor::of) else null,
-            evidence = "proxy=$hasProxyHook,relateGame=$hasRelateGameHook",
+            evidence = "proxy=$hasProxyHook,relateGame=$hasRelateGameHook,component=${relateGameComponent.type?.name ?: "-"}",
         )
         val hookPoints = listOf(
             childHookPoint(
@@ -1620,10 +1636,72 @@ object BiliSymbolResolver {
                 HP_VIDEO_DETAIL_BANNER_RELATE_GAME,
                 hasRelateGameHook,
                 "relate game view hook dependencies not found",
-                "ctor=${simpleViewEntryConstructor != null},create=${createViewEntry != null},bind=${bindToView != null},unit=${unitField != null}",
+                "component=${relateGameComponent.type?.name ?: "-"},ctor=${simpleViewEntryConstructor != null},create=${createViewEntry != null},bind=${bindToView != null},unit=${unitField != null},scan=${relateGameComponent.evidence}",
             ),
         )
         return SymbolScanResult.Found(symbols, "VideoDetailBannerAd", symbols.evidence, hookPoints)
+    }
+
+    private fun findRelateGameComponentClass(
+        classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
+        baseComponent: Class<*>,
+        viewBindingClass: Class<*>,
+    ): RelateGameComponentScan {
+        val names = findClassNamesByNameContains(bridge, listOf(RELATE_GAME_COMPONENT_PACKAGE))
+            .filter { it.startsWith("$RELATE_GAME_COMPONENT_PACKAGE.") }
+            .distinct()
+        if (names.isEmpty()) {
+            return RelateGameComponentScan(null, "candidates=0")
+        }
+
+        val restoreErrors = ArrayList<String>()
+        val candidates = names.mapNotNull { name ->
+            runCatching { Class.forName(name, false, classLoader) }
+                .onFailure { restoreErrors += "$name:${it.scanMessage()}" }
+                .getOrNull()
+        }.filter { type ->
+            type.isRelateGameComponentCandidate(baseComponent, viewBindingClass)
+        }.distinctBy { it.name }
+
+        val errorSuffix = restoreErrors.takeIf { it.isNotEmpty() }
+            ?.joinToString(prefix = ",restoreErrors=", limit = 2) { it.take(120) }
+            .orEmpty()
+        return when (candidates.size) {
+            1 -> RelateGameComponentScan(
+                type = candidates.single(),
+                evidence = "candidates=${names.size},matched=1$errorSuffix",
+            )
+            0 -> RelateGameComponentScan(
+                type = null,
+                evidence = "candidates=${names.size},matched=0$errorSuffix",
+            )
+            else -> RelateGameComponentScan(
+                type = null,
+                evidence = "candidates=${names.size},matched=${candidates.size},ambiguous=${candidates.joinToString(limit = 4) { it.name }}$errorSuffix",
+            )
+        }
+    }
+
+    private fun Class<*>.isRelateGameComponentCandidate(
+        baseComponent: Class<*>,
+        viewBindingClass: Class<*>,
+    ): Boolean {
+        if (!baseComponent.isAssignableFrom(this)) return false
+        if (Modifier.isAbstract(modifiers) || isInterface) return false
+        val hasCreateBinding = declaredMethods.any { method ->
+            method.parameterCount == 3 &&
+                method.parameterTypes[0] == Context::class.java &&
+                method.parameterTypes[1] == LayoutInflater::class.java &&
+                method.parameterTypes[2] == ViewGroup::class.java &&
+                viewBindingClass.isAssignableFrom(method.returnType)
+        }
+        if (!hasCreateBinding) return false
+        return declaredMethods.any { method ->
+            method.parameterCount == 2 &&
+                viewBindingClass.isAssignableFrom(method.parameterTypes[0]) &&
+                method.parameterTypes[1].isKotlinContinuationTypeName()
+        }
     }
 
     private fun scanCommentPicture(
@@ -3249,11 +3327,14 @@ object BiliSymbolResolver {
     private const val STORY_INTRO_COMMENT_SERVICE = "com.bilibili.video.story.action.widget.comment.p"
     private const val STORY_TAB_CONFIG = "com.bilibili.video.story.tab.W0"
     private const val KOTLIN_UNIT = "kotlin.Unit"
+    private const val ANDROIDX_VIEW_BINDING = "androidx.viewbinding.ViewBinding"
     private const val G_AD_BIZ_KT = "com.bilibili.gripper.api.ad.biz.GAdBizKt"
     private const val G_AD_VIDEO_DETAIL = "com.bilibili.gripper.api.ad.biz.GAdVideoDetail"
     private const val I_AD_UNDER_PLAYER = "com.bilibili.gripper.api.ad.biz.videodetail.underplayer.IAdUnderPlayer"
     private const val I_AD_VIDEO_RELATE = "com.bilibili.gripper.api.ad.biz.videodetail.relate.IAdVideoRelate"
     private const val I_AD_MERCHANDISE = "com.bilibili.gripper.api.ad.biz.videodetail.merchandise.IAdMerchandise"
+    private const val RELATE_GAME_COMPONENT_PACKAGE =
+        "com.bilibili.ship.theseus.united.page.intro.module.relate.game"
     private const val GEMINI_BINDING_COMPONENT = "com.bilibili.app.gemini.ui.m"
     private const val GEMINI_SIMPLE_VIEW_ENTRY = "com.bilibili.app.gemini.ui.UIComponent\$b"
     private val COMMENT_IMAGE_VIEWER_CLASSES = listOf(
@@ -3506,6 +3587,11 @@ private data class HomeRequestParamSymbols(
 private data class ControllerClassScan(
     val classes: List<Class<*>>,
     val error: String?,
+)
+
+private data class RelateGameComponentScan(
+    val type: Class<*>?,
+    val evidence: String,
 )
 
 private sealed class SymbolScanResult<out T> {

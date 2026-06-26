@@ -75,6 +75,7 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun installRelateGameComponentBlock(symbols: RestoredVideoDetailBannerAdSymbols): Int {
+        val relateGameComponentType = symbols.relateGameComponentType ?: return 0
         val simpleViewEntryConstructor = symbols.simpleViewEntryConstructor ?: return 0
         val createViewEntry = symbols.createViewEntry ?: return 0
         val bindToView = symbols.bindToView ?: return 0
@@ -82,7 +83,7 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         env.hookBefore(createViewEntry) { param ->
             runCatching {
-                if (!isRelateGameComponent(param.thisObject)) return@runCatching
+                if (!relateGameComponentType.isInstance(param.thisObject)) return@runCatching
                 val context = param.args.getOrNull(0) as? Context ?: return@runCatching
                 val emptyEntry = createEmptyViewEntry(simpleViewEntryConstructor, context) ?: return@runCatching
                 logBlocked("getRelateGameView")
@@ -93,13 +94,16 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         env.hookBefore(bindToView) { param ->
             runCatching {
-                if (!isRelateGameComponent(param.thisObject)) return@runCatching
+                if (!relateGameComponentType.isInstance(param.thisObject)) return@runCatching
                 param.result = unit
             }.onFailure {
                 log("VideoDetailBannerAd relate bindToView failed", it)
             }
         }
-        log("startHook: VideoDetailBannerAd relate game at ${createViewEntry.declaringClass.name}.createViewEntry/bindToView")
+        log(
+            "startHook: VideoDetailBannerAd relate game ${relateGameComponentType.name} " +
+                "at ${createViewEntry.declaringClass.name}.createViewEntry/bindToView",
+        )
         return 2
     }
 
@@ -263,9 +267,6 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
             original.javaClass.takeIf { it.isInterface }?.let(::add)
         }.toTypedArray()
 
-    private fun isRelateGameComponent(value: Any?): Boolean =
-        value?.javaClass?.name == RELATE_GAME_COMPONENT
-
     private fun createEmptyViewEntry(entryConstructor: Constructor<*>, context: Context): Any? {
         val view = Space(context).apply {
             visibility = View.GONE
@@ -284,8 +285,6 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private companion object {
-        private const val RELATE_GAME_COMPONENT =
-            "com.bilibili.ship.theseus.united.page.intro.module.relate.game.g"
         private val BLOCKED_METHODS = setOf("getUpperAdView", "getUpperHDView", "getUpperNestView")
     }
 }
