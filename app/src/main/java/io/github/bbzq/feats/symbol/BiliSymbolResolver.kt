@@ -103,6 +103,7 @@ object BiliSymbolResolver {
     private const val HP_SKIP_VIDEO_AD_PLAY_VIEW = "SkipVideoAdHook.PlayView"
     private const val HP_SKIP_VIDEO_AD_PLAYER_CORE = "SkipVideoAdHook.PlayerCore"
     private const val HP_SKIP_VIDEO_AD_CARD = "SkipVideoAdHook.CardPlayer"
+    private const val HP_SKIP_VIDEO_AD_STORY = "SkipVideoAdHook.StoryPlayer"
     private const val HP_SKIP_VIDEO_AD_PROGRESS = "SkipVideoAdProgressHook.InstallPoints"
     private const val HP_SKIP_VIDEO_AD_PROGRESS_DRAW = "SkipVideoAdProgressHook.ProgressDraw"
     private const val HP_SKIP_VIDEO_AD_PROGRESS_STORY = "SkipVideoAdProgressHook.StorySeekBar"
@@ -1037,6 +1038,22 @@ object BiliSymbolResolver {
         }
         return scan.error?.let { HookPointStatus.error(id, "fail closed: ${it.take(240)}") }
             ?: HookPointStatus.optional(id, missing)
+    }
+
+    private fun storySkipVideoAdHookPoint(
+        ready: Boolean,
+        classFound: Boolean,
+        scanError: String?,
+        evidence: String,
+    ): HookPointStatus {
+        if (ready) return HookPointStatus.found(HP_SKIP_VIDEO_AD_STORY, "StoryPlayer", evidence)
+        scanError?.let { return HookPointStatus.error(HP_SKIP_VIDEO_AD_STORY, "fail closed: ${it.take(240)}") }
+        val missing = if (classFound) {
+            "story player position/seek methods not found"
+        } else {
+            "story pager player class not found"
+        }
+        return HookPointStatus.optional(HP_SKIP_VIDEO_AD_STORY, missing)
     }
 
     private fun Class<*>.findMethod(name: String, returnType: Class<*>, vararg parameterTypes: Class<*>): Method? =
@@ -2083,8 +2100,25 @@ object BiliSymbolResolver {
         val cardCurrent = cardClasses.flatMap { it.currentPositionMethods() }.distinctBy(Method::toGenericString)
         val cardState = cardClasses.flatMap { it.stateMethods(CARD_STATE_METHOD_NAMES) }.distinctBy(Method::toGenericString)
         val cardSeek = cardClasses.flatMap { it.seekMethods() }.distinctBy(Method::toGenericString)
+        var storyScanError: String? = null
+        val storyPagerPlayer = classLoader.loadClassOrNull(STORY_PAGER_PLAYER)
+        val storyMethods = storyPagerPlayer?.let { type ->
+            runCatching {
+                Triple(
+                    type.currentPositionMethods().distinctBy(Method::toGenericString),
+                    type.stateMethods(STATE_METHOD_NAMES).distinctBy(Method::toGenericString),
+                    type.seekMethods().distinctBy(Method::toGenericString),
+                )
+            }.onFailure { throwable ->
+                storyScanError = throwable.scanMessage()
+            }.getOrNull()
+        } ?: Triple(emptyList(), emptyList(), emptyList())
+        val storyCurrent = storyMethods.first
+        val storyState = storyMethods.second
+        val storySeek = storyMethods.third
         val playerCoreReady = playerCoreCurrent.isNotEmpty() && playerCoreState.isNotEmpty() && playerCoreSeek.isNotEmpty()
         val cardReady = cardCurrent.isNotEmpty() && cardState.isNotEmpty() && cardSeek.isNotEmpty()
+        val storyReady = storyCurrent.isNotEmpty() && storySeek.isNotEmpty()
         val hookPoints = listOf(
             childHookPoint(HP_SKIP_VIDEO_AD_PLAY_VIEW, playViewMethods.isNotEmpty(), "play view hook methods not found", "methods=${playViewMethods.size}"),
             skipVideoAdControllerHookPoint(
@@ -2100,6 +2134,12 @@ object BiliSymbolResolver {
                 ready = cardReady,
                 missing = "card player position/state/seek methods not found",
                 evidence = "classes=${cardClasses.size},current=${cardCurrent.size},state=${cardState.size},seek=${cardSeek.size}",
+            ),
+            storySkipVideoAdHookPoint(
+                ready = storyReady,
+                classFound = storyPagerPlayer != null,
+                scanError = storyScanError,
+                evidence = "class=${storyPagerPlayer != null},current=${storyCurrent.size},state=${storyState.size},seek=${storySeek.size}",
             ),
         )
         val missingReason = when {
@@ -2118,7 +2158,10 @@ object BiliSymbolResolver {
             cardCurrentPositionMethods = cardCurrent.map(MethodDescriptor::of),
             cardStateMethods = cardState.map(MethodDescriptor::of),
             cardSeekMethods = cardSeek.map(MethodDescriptor::of),
-            evidence = "play=${playViewMethods.size},core=${playerCoreCurrent.size}/${playerCoreState.size}/${playerCoreSeek.size},card=${cardCurrent.size}/${cardState.size}/${cardSeek.size}",
+            storyCurrentPositionMethods = storyCurrent.map(MethodDescriptor::of),
+            storyStateMethods = storyState.map(MethodDescriptor::of),
+            storySeekMethods = storySeek.map(MethodDescriptor::of),
+            evidence = "play=${playViewMethods.size},core=${playerCoreCurrent.size}/${playerCoreState.size}/${playerCoreSeek.size},card=${cardCurrent.size}/${cardState.size}/${cardSeek.size},story=${storyCurrent.size}/${storyState.size}/${storySeek.size}",
         )
         return SymbolScanResult.Found(symbols, "SkipVideoAd", symbols.evidence, hookPoints)
     }
