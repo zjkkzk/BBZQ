@@ -3,7 +3,6 @@ package io.github.bbzq.feats.symbol.dexkit
 import android.content.Context
 import org.luckypray.dexkit.DexKitBridge
 import java.io.File
-import java.util.zip.ZipFile
 
 class DexKitScanBridge(
     val sourcePath: String,
@@ -15,17 +14,13 @@ class DexKitScanBridge(
 }
 
 object DexKitBridgeProvider {
-    private const val DEXKIT_LIBRARY_FILE_NAME = "libdexkit.so"
-    private const val EXTRACTED_LIBRARY_DIR = "bbzq_native/dexkit"
+    private const val DEXKIT_LIBRARY_NAME = "dexkit"
 
     @Volatile
     private var nativeLibraryLoaded = false
 
     @Volatile
     private var nativeLibraryLoadError: String? = null
-
-    private val nativeLibraryLoaderKey: String =
-        Integer.toHexString(System.identityHashCode(DexKitBridgeProvider::class.java.classLoader))
 
     fun openFirstAvailable(
         hostContext: Context,
@@ -34,7 +29,7 @@ object DexKitBridgeProvider {
         recordError: (String) -> Unit,
         log: (String) -> Unit,
     ): DexKitScanBridge? {
-        ensureNativeLibraryLoaded(hostContext, moduleContext, recordError, log) ?: return null
+        ensureNativeLibraryLoaded(recordError, log) ?: return null
         var failed = 0
         var firstError: String? = null
         for (sourcePath in sourcePaths.distinct()) {
@@ -53,8 +48,6 @@ object DexKitBridgeProvider {
     }
 
     private fun ensureNativeLibraryLoaded(
-        hostContext: Context,
-        moduleContext: Context?,
         recordError: (String) -> Unit,
         log: (String) -> Unit,
     ): Boolean? {
@@ -69,7 +62,7 @@ object DexKitBridgeProvider {
                 recordError("DexKit native unavailable: $it")
                 return@synchronized null
             }
-            val loadError = tryLoadNativeLibrary(hostContext, moduleContext, log)
+            val loadError = tryLoadNativeLibrary(log)
             if (loadError == null) {
                 nativeLibraryLoaded = true
                 true
@@ -82,60 +75,15 @@ object DexKitBridgeProvider {
     }
 
     private fun tryLoadNativeLibrary(
-        hostContext: Context,
-        moduleContext: Context?,
         log: (String) -> Unit,
     ): String? {
-        val moduleApk = moduleContext?.applicationInfo?.sourceDir
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::File)
-            ?.takeIf { it.isFile }
-            ?: return "module apk unavailable"
-        val target = extractLibrary(hostContext, moduleApk)
-            ?: return "libdexkit.so not found in module apk"
         return try {
-            System.load(target.absolutePath)
-            log("DexKitBridge: loaded native library extracted to ${target.parent}")
+            System.loadLibrary(DEXKIT_LIBRARY_NAME)
+            log("DexKitBridge: loaded by System.loadLibrary")
             null
         } catch (t: Throwable) {
-            "extracted=${target.absolutePath} ${t.scanMessage()}"
+            "System.loadLibrary failed: ${t.scanMessage()}"
         }
-    }
-
-    private fun extractLibrary(hostContext: Context, moduleApk: File): File? {
-        val fingerprint = "${moduleApk.length()}_${moduleApk.lastModified()}".filter {
-            it.isLetterOrDigit() || it == '_'
-        }
-        val baseDir = File(hostContext.codeCacheDir, "$EXTRACTED_LIBRARY_DIR/$fingerprint/$nativeLibraryLoaderKey")
-        ZipFile(moduleApk).use { zip ->
-            for (abi in android.os.Build.SUPPORTED_ABIS.toList()) {
-                val entry = zip.getEntry("lib/$abi/$DEXKIT_LIBRARY_FILE_NAME") ?: continue
-                val abiDir = File(baseDir, abi)
-                val target = File(abiDir, DEXKIT_LIBRARY_FILE_NAME)
-                if (target.isFile && target.length() == entry.size) return target
-                if (!abiDir.exists() && !abiDir.mkdirs()) return null
-                val temp = File(abiDir, "$DEXKIT_LIBRARY_FILE_NAME.tmp")
-                zip.getInputStream(entry).use { input ->
-                    temp.outputStream().use { output -> input.copyTo(output) }
-                }
-                if (entry.size >= 0 && temp.length() != entry.size) {
-                    temp.delete()
-                    continue
-                }
-                if (target.exists() && !target.delete()) {
-                    temp.delete()
-                    return null
-                }
-                if (!temp.renameTo(target)) {
-                    temp.delete()
-                    return null
-                }
-                target.setReadable(true, true)
-                target.setExecutable(true, true)
-                return target
-            }
-        }
-        return null
     }
 }
 
