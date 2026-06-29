@@ -87,7 +87,7 @@ data class BiliHookSymbols(
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 22
+        const val CACHE_SCHEMA_VERSION = 24
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -141,7 +141,7 @@ data class BiliHookSymbols(
 }
 
 object DexKitRuleVersions {
-    const val CURRENT = 38
+    const val CURRENT = 40
 }
 
 data class HookPointStatus(
@@ -224,6 +224,19 @@ data class ShareSymbols(
     val legacyGetLink: MethodDescriptor? = null,
     val legacyGetContent: MethodDescriptor? = null,
     val legacyGetShareMode: MethodDescriptor? = null,
+    val legacySetLink: MethodDescriptor? = null,
+    val legacySetContent: MethodDescriptor? = null,
+    val legacySetShareMode: MethodDescriptor? = null,
+    val shareChannelsGetCopyLink: MethodDescriptor? = null,
+    val shareChannelsGetJumpLink: MethodDescriptor? = null,
+    val shareChannelsGetText: MethodDescriptor? = null,
+    val shareChannelsSetCopyLink: MethodDescriptor? = null,
+    val shareChannelsSetJumpLink: MethodDescriptor? = null,
+    val shareChannelsSetText: MethodDescriptor? = null,
+    val shareChannelItemGetJumpLink: MethodDescriptor? = null,
+    val shareChannelItemSetJumpLink: MethodDescriptor? = null,
+    val shareClickResultClassName: String? = null,
+    val shareBaseInfoClassName: String? = null,
     val shareContentClassName: String? = null,
     val shareContentCopyMethods: List<MethodDescriptor>,
     val shareContentGetLink: MethodDescriptor? = null,
@@ -242,6 +255,19 @@ data class ShareSymbols(
         .putOpt("legacyGetLink", legacyGetLink?.toJson())
         .putOpt("legacyGetContent", legacyGetContent?.toJson())
         .putOpt("legacyGetShareMode", legacyGetShareMode?.toJson())
+        .putOpt("legacySetLink", legacySetLink?.toJson())
+        .putOpt("legacySetContent", legacySetContent?.toJson())
+        .putOpt("legacySetShareMode", legacySetShareMode?.toJson())
+        .putOpt("shareChannelsGetCopyLink", shareChannelsGetCopyLink?.toJson())
+        .putOpt("shareChannelsGetJumpLink", shareChannelsGetJumpLink?.toJson())
+        .putOpt("shareChannelsGetText", shareChannelsGetText?.toJson())
+        .putOpt("shareChannelsSetCopyLink", shareChannelsSetCopyLink?.toJson())
+        .putOpt("shareChannelsSetJumpLink", shareChannelsSetJumpLink?.toJson())
+        .putOpt("shareChannelsSetText", shareChannelsSetText?.toJson())
+        .putOpt("shareChannelItemGetJumpLink", shareChannelItemGetJumpLink?.toJson())
+        .putOpt("shareChannelItemSetJumpLink", shareChannelItemSetJumpLink?.toJson())
+        .putOpt("shareClickResultClassName", shareClickResultClassName)
+        .putOpt("shareBaseInfoClassName", shareBaseInfoClassName)
         .putOpt("shareContentClassName", shareContentClassName)
         .put("shareContentCopyMethods", shareContentCopyMethods.toJsonArray { it.toJson() })
         .putOpt("shareContentGetLink", shareContentGetLink?.toJson())
@@ -261,6 +287,19 @@ data class ShareSymbols(
             legacyGetLink = legacyGetLink.restoreOptional(classLoader),
             legacyGetContent = legacyGetContent.restoreOptional(classLoader),
             legacyGetShareMode = legacyGetShareMode.restoreOptional(classLoader),
+            legacySetLink = legacySetLink.restoreOptional(classLoader),
+            legacySetContent = legacySetContent.restoreOptional(classLoader),
+            legacySetShareMode = legacySetShareMode.restoreOptional(classLoader),
+            shareChannelsGetCopyLink = shareChannelsGetCopyLink.restoreOptional(classLoader),
+            shareChannelsGetJumpLink = shareChannelsGetJumpLink.restoreOptional(classLoader),
+            shareChannelsGetText = shareChannelsGetText.restoreOptional(classLoader),
+            shareChannelsSetCopyLink = shareChannelsSetCopyLink.restoreOptional(classLoader),
+            shareChannelsSetJumpLink = shareChannelsSetJumpLink.restoreOptional(classLoader),
+            shareChannelsSetText = shareChannelsSetText.restoreOptional(classLoader),
+            shareChannelItemGetJumpLink = shareChannelItemGetJumpLink.restoreOptional(classLoader),
+            shareChannelItemSetJumpLink = shareChannelItemSetJumpLink.restoreOptional(classLoader),
+            shareClickResultClass = shareClickResultClassName?.let(classLoader::loadClassOrNull),
+            shareBaseInfoClass = shareBaseInfoClassName?.let(classLoader::loadClassOrNull),
             shareContentClass = shareContentClassName?.let(classLoader::loadClassOrNull),
             shareContentCopyMethods = shareContentCopyMethods.restoreAvailable(classLoader),
             shareContentGetLink = shareContentGetLink.restoreOptional(classLoader),
@@ -280,6 +319,21 @@ data class ShareSymbols(
             legacyGetLink = obj.optJSONObject("legacyGetLink")?.let(MethodDescriptor::fromJson),
             legacyGetContent = obj.optJSONObject("legacyGetContent")?.let(MethodDescriptor::fromJson),
             legacyGetShareMode = obj.optJSONObject("legacyGetShareMode")?.let(MethodDescriptor::fromJson),
+            legacySetLink = obj.optJSONObject("legacySetLink")?.let(MethodDescriptor::fromJson),
+            legacySetContent = obj.optJSONObject("legacySetContent")?.let(MethodDescriptor::fromJson),
+            legacySetShareMode = obj.optJSONObject("legacySetShareMode")?.let(MethodDescriptor::fromJson),
+            shareChannelsGetCopyLink = obj.optJSONObject("shareChannelsGetCopyLink")?.let(MethodDescriptor::fromJson),
+            shareChannelsGetJumpLink = obj.optJSONObject("shareChannelsGetJumpLink")?.let(MethodDescriptor::fromJson),
+            shareChannelsGetText = obj.optJSONObject("shareChannelsGetText")?.let(MethodDescriptor::fromJson),
+            shareChannelsSetCopyLink = obj.optJSONObject("shareChannelsSetCopyLink")?.let(MethodDescriptor::fromJson),
+            shareChannelsSetJumpLink = obj.optJSONObject("shareChannelsSetJumpLink")?.let(MethodDescriptor::fromJson),
+            shareChannelsSetText = obj.optJSONObject("shareChannelsSetText")?.let(MethodDescriptor::fromJson),
+            shareChannelItemGetJumpLink = obj.optJSONObject("shareChannelItemGetJumpLink")
+                ?.let(MethodDescriptor::fromJson),
+            shareChannelItemSetJumpLink = obj.optJSONObject("shareChannelItemSetJumpLink")
+                ?.let(MethodDescriptor::fromJson),
+            shareClickResultClassName = obj.optString("shareClickResultClassName").takeIf { it.isNotBlank() },
+            shareBaseInfoClassName = obj.optString("shareBaseInfoClassName").takeIf { it.isNotBlank() },
             shareContentClassName = obj.optString("shareContentClassName").takeIf { it.isNotBlank() },
             shareContentCopyMethods = obj.optJSONArray("shareContentCopyMethods").toList {
                 MethodDescriptor.fromJson(it)
@@ -307,6 +361,19 @@ data class RestoredShareSymbols(
     val legacyGetLink: Method?,
     val legacyGetContent: Method?,
     val legacyGetShareMode: Method?,
+    val legacySetLink: Method?,
+    val legacySetContent: Method?,
+    val legacySetShareMode: Method?,
+    val shareChannelsGetCopyLink: Method?,
+    val shareChannelsGetJumpLink: Method?,
+    val shareChannelsGetText: Method?,
+    val shareChannelsSetCopyLink: Method?,
+    val shareChannelsSetJumpLink: Method?,
+    val shareChannelsSetText: Method?,
+    val shareChannelItemGetJumpLink: Method?,
+    val shareChannelItemSetJumpLink: Method?,
+    val shareClickResultClass: Class<*>?,
+    val shareBaseInfoClass: Class<*>?,
     val shareContentClass: Class<*>?,
     val shareContentCopyMethods: List<Method>,
     val shareContentGetLink: Method?,
