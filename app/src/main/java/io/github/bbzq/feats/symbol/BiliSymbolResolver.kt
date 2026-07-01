@@ -313,7 +313,7 @@ object BiliSymbolResolver {
             scanHomeComponentHide(classLoader)
         }
         val videoComment = scanHookPoint(HP_VIDEO_COMMENT, hookPoints, scanErrors, log) {
-            scanVideoComment(classLoader)
+            scanVideoComment(classLoader, ::bridge)
         }
         val skipVideoAd = scanHookPoint(HP_SKIP_VIDEO_AD, hookPoints, scanErrors, log) {
             scanSkipVideoAd(classLoader, ::bridge)
@@ -325,7 +325,7 @@ object BiliSymbolResolver {
             scanSkipVideoAdAutoLike(classLoader)
         }
         val chronosPromotion = scanHookPoint(HP_CHRONOS_PROMOTION, hookPoints, scanErrors, log) {
-            scanChronosPromotion(classLoader)
+            scanChronosPromotion(classLoader, ::bridge)
         }
         val fullNumberFormat = scanHookPoint(HP_FULL_NUMBER_FORMAT, hookPoints, scanErrors, log) {
             scanFullNumberFormat(classLoader)
@@ -854,31 +854,129 @@ object BiliSymbolResolver {
         bridge: () -> DexKitBridge?,
     ): SymbolScanResult<BlockUpdateSymbols> {
         val currentBridge = bridge() ?: return SymbolScanResult.Missing("DexKitBridge unavailable")
-        val methods = runCatching {
+        val searchErrors = ArrayList<String>()
+        val signatureMethodData = runCatching {
             currentBridge.findMethod(
                 FindMethod.create()
-                    .searchPackages("com.bilibili", "tv.danmaku")
                     .matcher(
                         MethodMatcher.create()
-                            .name("check")
-                            .paramTypes(Context::class.java)
-                            .usingStrings("Do sync http request."),
+                            .returnType(BILI_UPGRADE_INFO)
+                            .paramTypes(Context::class.java),
                     ),
             )
         }.getOrElse { throwable ->
-            return SymbolScanResult.Missing("update check method search failed: ${throwable.scanMessage()}")
+            searchErrors += "signature Context->BiliUpgradeInfo: ${throwable.scanMessage()}"
+            emptyList()
         }
-        val methodData = methods.firstOrNull()
-            ?: return SymbolScanResult.Missing("update check method not found")
-        val method = runCatching { methodData.getMethodInstance(classLoader) }
-            .getOrNull()
-            ?: return SymbolScanResult.Missing("update check method restore failed")
+        val stringMethodData = BLOCK_UPDATE_STRING_RULES.asSequence()
+            .mapNotNull { strings ->
+                runCatching {
+                    currentBridge.findMethod(
+                        FindMethod.create()
+                            .matcher(
+                                strings.fold(
+                                    MethodMatcher.create()
+                                        .paramTypes(Context::class.java),
+                                ) { matcher, string -> matcher.usingStrings(string) },
+                            ),
+                    )
+                }.getOrElse { throwable ->
+                    searchErrors += strings.joinToString("+") + ": " + throwable.scanMessage()
+                    null
+                }
+            }
+            .flatMap { it.asSequence() }
+            .distinctBy { it.descriptor }
+            .toList()
+        if (signatureMethodData.isEmpty() && stringMethodData.isEmpty() && searchErrors.isNotEmpty()) {
+            return SymbolScanResult.Missing("update check method search failed: ${searchErrors.joinToString("; ")}")
+        }
+        val restoreErrors = ArrayList<String>()
+        val stringCandidates = stringMethodData
+            .mapNotNull { data ->
+                runCatching { data.getMethodInstance(classLoader) }.getOrElse { throwable ->
+                    restoreErrors += "${data.descriptor}: ${throwable.scanMessage()}"
+                    null
+                }
+            }
+            .filter { it.isBlockUpdateCheckCandidate() }
+            .distinctBy(Method::toGenericString)
+            .toList()
+        val stringCandidateKeys = stringCandidates.map(Method::toGenericString).toSet()
+        val candidates = (signatureMethodData.asSequence() + stringMethodData.asSequence())
+            .distinctBy { it.descriptor }
+            .mapNotNull { data ->
+                runCatching { data.getMethodInstance(classLoader) }.getOrElse { throwable ->
+                    restoreErrors += "${data.descriptor}: ${throwable.scanMessage()}"
+                    null
+                }
+            }
+            .filter { it.isBlockUpdateCheckCandidate() }
+            .distinctBy(Method::toGenericString)
+            .toList()
+        val supplierCandidates = candidates
+            .mapNotNull { method ->
+                method.findBlockUpdateSupplierInterface()?.let { supplierInterface ->
+                    method to supplierInterface
+                }
+            }
+        val leafSupplierCandidates = supplierCandidates
+            .filterNot { (method, supplierInterface) ->
+                method.declaringClass.hasBlockUpdateDelegateField(supplierInterface)
+            }
+        val method = when {
+            stringCandidates.size == 1 -> stringCandidates.single()
+            leafSupplierCandidates.size == 1 -> leafSupplierCandidates.single().first
+            supplierCandidates.size == 1 -> supplierCandidates.single().first
+            candidates.size == 1 -> candidates.single()
+            candidates.isEmpty() -> {
+                val restoreHint = restoreErrors.take(2).joinToString("; ").takeIf { it.isNotBlank() }
+                return SymbolScanResult.Missing(
+                    buildString {
+                        append("update check method not found")
+                        append(": signature=${signatureMethodData.size},string=${stringMethodData.size}")
+                        append(",restored=0")
+                        if (restoreHint != null) append(",restore=$restoreHint")
+                    },
+                )
+            }
+            else -> return SymbolScanResult.Missing(
+                "update check method ambiguous: " +
+                    "candidates=${candidates.size},supplier=${supplierCandidates.size},leaf=${leafSupplierCandidates.size}," +
+                    candidates.joinToString(limit = 4) { it.declaringClass.name },
+            )
+        }
         val symbols = BlockUpdateSymbols(
             checkMethod = MethodDescriptor.of(method),
-            evidence = "${method.declaringClass.name}.${method.name}",
+            evidence = "${method.declaringClass.name}.${method.name}," +
+                "signature=${signatureMethodData.size},string=${stringMethodData.size}," +
+                "stringHit=${method.toGenericString() in stringCandidateKeys}",
         )
         return SymbolScanResult.Found(symbols, symbols.evidence, symbols.evidence)
     }
+
+    private fun Method.isBlockUpdateCheckCandidate(): Boolean {
+        if (parameterTypes.contentEquals(arrayOf(Context::class.java)).not()) return false
+        if (returnType.name != BILI_UPGRADE_INFO) return false
+        if (Modifier.isStatic(modifiers) || Modifier.isAbstract(modifiers)) return false
+        if (declaringClass.isInterface || Modifier.isAbstract(declaringClass.modifiers)) return false
+        return true
+    }
+
+    private fun Method.findBlockUpdateSupplierInterface(): Class<*>? =
+        declaringClass.interfaces.firstOrNull { candidate ->
+            candidate.allMethods().any { method ->
+                method.parameterTypes.contentEquals(arrayOf(Context::class.java)) &&
+                    method.returnType.name == BILI_UPGRADE_INFO
+            }
+        }
+
+    private fun Class<*>.hasBlockUpdateDelegateField(supplierInterface: Class<*>): Boolean =
+        allFields().any { field ->
+            !Modifier.isStatic(field.modifiers) &&
+                field.type != this &&
+                supplierInterface.isAssignableFrom(field.type)
+        }
 
     private fun scanMineProfile(
         classLoader: ClassLoader,
@@ -2345,6 +2443,7 @@ object BiliSymbolResolver {
 
     private fun scanVideoComment(
         classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
     ): SymbolScanResult<VideoCommentSymbols> {
         val disableCommentConstructors = THESEUS_TAB_PAGER_SERVICE
             .asSequence()
@@ -2354,9 +2453,16 @@ object BiliSymbolResolver {
             .map(ConstructorDescriptor::of)
             .toList()
 
-        val quickReplyViewModelMethods = COMMENT_VIEW_MODEL_CLASSES
+        val commentViewModelClasses = COMMENT_VIEW_MODEL_CLASSES
             .asSequence()
             .mapNotNull { classLoader.loadClassOrNull(it) }
+            .distinctBy { it.name }
+            .toList()
+        val quickReplyActionScan = findQuickReplyActionClasses(classLoader, bridge)
+        val quickReplyActionClasses = quickReplyActionScan.classes
+
+        val quickReplyViewModelMethods = commentViewModelClasses
+            .asSequence()
             .flatMap { type ->
                 (sequenceOf(type) + type.declaredClasses.asSequence()).flatMap { it.declaredMethods.asSequence() }
             }
@@ -2364,14 +2470,13 @@ object BiliSymbolResolver {
                 method.returnType == Void.TYPE &&
                     method.parameterCount == 1 &&
                     !method.name.contains("lambda", ignoreCase = true) &&
-                    method.parameterTypes.firstOrNull()?.isCommentActionType() == true
+                    method.parameterTypes.firstOrNull()?.isCommentActionType(quickReplyActionClasses) == true
             }
             .distinctBy(Method::toGenericString)
             .toList()
 
-        val quickReplyDispatcherMethods = COMMENT_VIEW_MODEL_CLASSES
+        val quickReplyDispatcherMethods = commentViewModelClasses
             .asSequence()
-            .mapNotNull { classLoader.loadClassOrNull(it) }
             .flatMap { type ->
                 type.declaredClasses.asSequence().flatMap { it.declaredMethods.asSequence() }
             }
@@ -2379,14 +2484,16 @@ object BiliSymbolResolver {
                 method.returnType == Void.TYPE &&
                     method.parameterCount == 1 &&
                     !method.name.contains("lambda", ignoreCase = true) &&
-                    method.parameterTypes.firstOrNull()?.isCommentActionBaseType() == true
+                    method.parameterTypes.firstOrNull()?.isCommentActionBaseType(quickReplyActionClasses) == true
             }
             .distinctBy(Method::toGenericString)
             .toList()
 
-        val quickReplyActionBaseMethods = COMMENT_ACTION_BASE_CLASSES
-            .asSequence()
-            .mapNotNull { classLoader.loadClassOrNull(it) }
+        val quickReplyActionBaseMethods = (
+            COMMENT_ACTION_BASE_CLASSES.asSequence().mapNotNull { classLoader.loadClassOrNull(it) } +
+                quickReplyActionClasses.asSequence()
+            )
+            .distinctBy { it.name }
             .flatMap { type ->
                 type.allMethods().filter { method ->
                     method.returnType == Void.TYPE &&
@@ -2489,7 +2596,7 @@ object BiliSymbolResolver {
             searchUrlsMethod = searchUrlsMethod?.let(MethodDescriptor::of),
             emptyPageHooks = emptyPageHooks,
             mainListOnNextMethods = mainListOnNextMethods.map(MethodDescriptor::of),
-            evidence = "constructors=${disableCommentConstructors.size},quick=${quickReplyActionMethods.size + quickReplyDialogMethods.size},widgets=${voteWidgetMethods.size + followWidgetMethods.size + headerDecorativeMethods.size},empty=${emptyPageHooks.size},main=${mainListOnNextMethods.size}",
+            evidence = "constructors=${disableCommentConstructors.size},quick=${quickReplyActionMethods.size + quickReplyDialogMethods.size},quickScan=${quickReplyActionScan.evidence},widgets=${voteWidgetMethods.size + followWidgetMethods.size + headerDecorativeMethods.size},empty=${emptyPageHooks.size},main=${mainListOnNextMethods.size}",
         )
         val quickReplyCount = quickReplyActionMethods.size + quickReplyDialogMethods.size
         val widgetCount = voteWidgetMethods.size + followWidgetMethods.size + headerDecorativeMethods.size
@@ -2500,7 +2607,12 @@ object BiliSymbolResolver {
                 "disable comment constructor hook not found",
                 "constructors=${disableCommentConstructors.size}",
             ),
-            childHookPoint(HP_VIDEO_COMMENT_QUICK_REPLY, quickReplyCount > 0, "quick reply hook methods not found", "methods=$quickReplyCount"),
+            childHookPoint(
+                HP_VIDEO_COMMENT_QUICK_REPLY,
+                quickReplyCount > 0,
+                "quick reply hook methods not found",
+                "methods=$quickReplyCount,${quickReplyActionScan.evidence}",
+            ),
             childHookPoint(HP_VIDEO_COMMENT_WIDGETS, widgetCount > 0, "comment widget hook methods not found", "methods=$widgetCount"),
             childHookPoint(HP_VIDEO_COMMENT_SEARCH, searchUrlsMethod != null, "comment search url method not found"),
             childHookPoint(HP_VIDEO_COMMENT_EMPTY_PAGE, emptyPageHooks.isNotEmpty(), "empty page hook points not found", "hooks=${emptyPageHooks.size}"),
@@ -2724,6 +2836,7 @@ object BiliSymbolResolver {
 
     private fun scanChronosPromotion(
         classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
     ): SymbolScanResult<ChronosPromotionSymbols> {
         val classes = ArrayList<NamedClassSymbol>()
         val methodGroups = ArrayList<NamedMethodGroup>()
@@ -2746,7 +2859,6 @@ object BiliSymbolResolver {
 
         val rpcHandler = addClass(CHRONOS_ID_RPC_HANDLER, CHRONOS_RPC_HANDLER)
         val remoteHandler = addClass(CHRONOS_ID_REMOTE_HANDLER, REMOTE_SERVICE_HANDLER)
-        val senderType = addClass(CHRONOS_ID_MESSAGE_SENDER, CHRONOS_MESSAGE_SENDER)
         val function2Type = addClass(CHRONOS_ID_FUNCTION2, KOTLIN_FUNCTION2)
 
         val updateDetailStateRequest = addClass(CHRONOS_ID_UPDATE_DETAIL_STATE_REQUEST, UPDATE_VIDEO_DETAIL_STATE_REQUEST)
@@ -2765,6 +2877,10 @@ object BiliSymbolResolver {
         val commandDmListResponse = addClass(CHRONOS_ID_COMMAND_DM_LIST_RESPONSE, COMMAND_DM_LIST_RESPONSE)
         val videoDetailStateChangeRequest = addClass(CHRONOS_ID_VIDEO_DETAIL_STATE_CHANGE_REQUEST, VIDEO_DETAIL_STATE_CHANGE_REQUEST)
         val viewProgressDetail = addClass(CHRONOS_ID_VIEW_PROGRESS_DETAIL, VIEW_PROGRESS_DETAIL)
+        val senderScan = findChronosMessageSenderType(classLoader, remoteHandler, function2Type, bridge)
+        val senderType = senderScan.type?.also {
+            classes += NamedClassSymbol(CHRONOS_ID_MESSAGE_SENDER, it.name)
+        }
 
         if (rpcHandler != null) {
             val invokeMethods = rpcHandler.allMethods()
@@ -2843,9 +2959,7 @@ object BiliSymbolResolver {
                 addMethods(
                     CHRONOS_METHOD_MESSAGE_SEND,
                     senderType.allMethods().filter {
-                        it.name == "e" &&
-                            it.parameterCount == 2 &&
-                            Map::class.java.isAssignableFrom(it.parameterTypes[1])
+                        it.isChronosMessageSendMethod()
                     },
                 )
             }
@@ -2853,11 +2967,7 @@ object BiliSymbolResolver {
                 addMethods(
                     CHRONOS_METHOD_COMMAND_DM_LIST,
                     senderType.allMethods().filter {
-                        it.name == "a" &&
-                            it.parameterCount == 5 &&
-                            Map::class.java.isAssignableFrom(it.parameterTypes[1]) &&
-                            it.parameterTypes[2] == Class::class.java &&
-                            it.parameterTypes[3].name == KOTLIN_FUNCTION2
+                        it.isChronosCommandDmListMethod(function2Type)
                     },
                 )
             }
@@ -2941,11 +3051,12 @@ object BiliSymbolResolver {
             interactLayerService = interactLayerService,
             geminiOperationWidget = geminiOperationWidget,
             geminiOperationObserver = geminiOperationObserver,
+            senderScan = senderScan,
         )
         val symbols = ChronosPromotionSymbols(
             classSymbols = classes.distinctBy { it.id },
             methodGroups = methodGroups.distinctBy { it.id },
-            evidence = "classes=${classes.distinctBy { it.id }.size},methodGroups=${methodGroups.size},methods=$totalMethods",
+            evidence = "classes=${classes.distinctBy { it.id }.size},methodGroups=${methodGroups.size},methods=$totalMethods,sender=${senderScan.evidence}",
         )
         return SymbolScanResult.Found(symbols, "ChronosPromotion", symbols.evidence, childHookPoints)
     }
@@ -2976,6 +3087,7 @@ object BiliSymbolResolver {
         interactLayerService: Class<*>?,
         geminiOperationWidget: Class<*>?,
         geminiOperationObserver: Class<*>?,
+        senderScan: ChronosSenderScan,
     ): List<HookPointStatus> {
         fun methodCount(id: String): Int =
             methodGroups.firstOrNull { it.id == id }?.methods?.size ?: 0
@@ -2983,8 +3095,18 @@ object BiliSymbolResolver {
         fun status(id: String, methodId: String, missing: List<String>, evidence: String): HookPointStatus {
             val methods = methodCount(methodId)
             return when {
-                missing.isNotEmpty() -> HookPointStatus.missing(id, "fail closed: ${missing.joinToString()}")
-                methods == 0 -> HookPointStatus.missing(id, "fail closed: method group $methodId not found")
+                missing.isNotEmpty() -> HookPointStatus(
+                    id = id,
+                    state = HookPointState.MISSING,
+                    missing = "fail closed: ${missing.joinToString()}",
+                    evidence = evidence,
+                )
+                methods == 0 -> HookPointStatus(
+                    id = id,
+                    state = HookPointState.MISSING,
+                    missing = "fail closed: method group $methodId not found",
+                    evidence = evidence,
+                )
                 else -> HookPointStatus.found(id, "ChronosPromotion.$methodId", "methods=$methods,$evidence")
             }
         }
@@ -2997,14 +3119,14 @@ object BiliSymbolResolver {
             if (notifyCommercialEventRequest == null) add(CHRONOS_ID_NOTIFY_COMMERCIAL_EVENT_REQUEST)
         }
         val senderMissing = buildList {
-            if (senderType == null) add(CHRONOS_ID_MESSAGE_SENDER)
+            if (senderType == null) add(senderScan.missing ?: CHRONOS_ID_MESSAGE_SENDER)
             if (addCustomRequest == null) add(CHRONOS_ID_ADD_CUSTOM_DANMAKU_REQUEST)
             if (commandDanmakuSentRequest == null) add(CHRONOS_ID_COMMAND_DANMAKU_SENT_REQUEST)
             if (dmViewChangeRequest == null) add(CHRONOS_ID_DM_VIEW_CHANGE_REQUEST)
             if (dmViewReply == null) add(CHRONOS_ID_DM_VIEW_REPLY)
         }
         val commandDmListMissing = buildList {
-            if (senderType == null) add(CHRONOS_ID_MESSAGE_SENDER)
+            if (senderType == null) add(senderScan.missing ?: CHRONOS_ID_MESSAGE_SENDER)
             if (commandDmListRequest == null) add(CHRONOS_ID_COMMAND_DM_LIST_REQUEST)
             if (commandDmListResponse == null) add(CHRONOS_ID_COMMAND_DM_LIST_RESPONSE)
             if (function2Type == null) add(CHRONOS_ID_FUNCTION2)
@@ -3069,13 +3191,13 @@ object BiliSymbolResolver {
                 id = HP_CHRONOS_MESSAGE_SENDER,
                 methodId = CHRONOS_METHOD_MESSAGE_SEND,
                 missing = senderMissing,
-                evidence = "requests=${4 - senderMissing.count { it != CHRONOS_ID_MESSAGE_SENDER }}/4",
+                evidence = "sender=${senderScan.evidence},requests=${4 - senderMissing.count { it != senderScan.missing && it != CHRONOS_ID_MESSAGE_SENDER }}/4",
             ),
             status(
                 id = HP_CHRONOS_COMMAND_DM_LIST,
                 methodId = CHRONOS_METHOD_COMMAND_DM_LIST,
                 missing = commandDmListMissing,
-                evidence = "request=${commandDmListRequest != null},response=${commandDmListResponse != null}",
+                evidence = "sender=${senderScan.evidence},request=${commandDmListRequest != null},response=${commandDmListResponse != null}",
             ),
             status(
                 id = HP_CHRONOS_REMOTE_VIDEO_DETAIL_STATE,
@@ -3137,6 +3259,155 @@ object BiliSymbolResolver {
     private fun hasDetailStateGetterMethods(requestType: Class<*>, getters: List<String>): Boolean =
         getters.any { getter -> requestType.allMethods().any { it.name == getter && it.parameterCount == 0 } }
 
+    private fun findChronosMessageSenderType(
+        classLoader: ClassLoader,
+        remoteHandler: Class<*>?,
+        function2Type: Class<*>?,
+        bridge: () -> DexKitBridge?,
+    ): ChronosSenderScan {
+        if (remoteHandler == null) {
+            return ChronosSenderScan(type = null, evidence = "remoteHandler=false", missing = CHRONOS_ID_MESSAGE_SENDER)
+        }
+        val fields = runCatching { remoteHandler.allFields().toList() }.getOrElse { throwable ->
+            val reason = "fields=${throwable.scanMessage()}"
+            return ChronosSenderScan(type = null, evidence = reason, missing = "$CHRONOS_ID_MESSAGE_SENDER($reason)")
+        }
+        val senderErrors = ArrayList<String>()
+        val remoteMethods = runCatching { remoteHandler.allMethods().toList() }.getOrElse { throwable ->
+            senderErrors += "remoteMethods=${throwable.scanMessage()}"
+            emptyList()
+        }
+        val fieldTypes = fields.map { it.type }.distinctBy { it.name }
+
+        fun candidateOf(type: Class<*>, source: String): ChronosSenderCandidate? {
+            if (type.isPrimitive || type.name == remoteHandler.name || !type.isConcreteHookClass()) return null
+            val methods = runCatching { type.allMethods().toList() }.getOrElse { throwable ->
+                senderErrors += "${type.name}.methods=${throwable.scanMessage()}"
+                return null
+            }
+            return ChronosSenderCandidate(
+                type = type,
+                source = source,
+                messageMethods = methods.count { it.isChronosMessageSendMethod() },
+                commandMethods = function2Type?.let { function2 ->
+                    methods.count { it.isChronosCommandDmListMethod(function2) }
+                } ?: methods.count { it.isChronosSenderRequestMethod(function2Type, allowAbstract = false) },
+            )
+        }
+
+        val directCandidates = fieldTypes
+            .mapNotNull { type -> candidateOf(type, "field") }
+
+        val senderInterfaces = (fieldTypes.asSequence().flatMap { sequenceOf(it) + it.chronosImplementedInterfaces() } +
+            remoteMethods.asSequence().map { it.returnType })
+            .filter { type -> type.isInterface && type.isChronosSenderInterface(function2Type) }
+            .distinctBy { it.name }
+            .toList()
+
+        val implementorErrors = ArrayList<String>()
+        val interfaceCandidates = senderInterfaces.flatMap { senderInterface ->
+            val scan = findConcreteImplementors(classLoader, bridge, senderInterface.name)
+            scan.error?.let { implementorErrors += it }
+            scan.classes.mapNotNull { type -> candidateOf(type, "iface:${senderInterface.name.substringAfterLast('.')}") }
+        }
+
+        val candidates = (directCandidates + interfaceCandidates)
+            .filter { it.messageMethods > 0 || it.commandMethods > 0 }
+            .groupBy { it.type.name }
+            .map { (_, sameType) ->
+                val first = sameType.first()
+                first.copy(source = sameType.map { it.source }.distinct().joinToString("+"))
+            }
+        val completeCandidates = candidates.filter { it.messageMethods > 0 && it.commandMethods > 0 }
+        val directCompleteCandidates = completeCandidates.filter { it.source.split('+').contains("field") }
+        val commandCandidates = candidates.filter { it.commandMethods > 0 }
+        val directCommandCandidates = commandCandidates.filter { it.source.split('+').contains("field") }
+        val messageCandidates = candidates.filter { it.messageMethods > 0 }
+        val selected = when {
+            directCompleteCandidates.size == 1 -> directCompleteCandidates.single()
+            completeCandidates.size == 1 -> completeCandidates.single()
+            directCommandCandidates.size == 1 -> directCommandCandidates.single()
+            commandCandidates.size == 1 -> commandCandidates.single()
+            messageCandidates.size == 1 -> messageCandidates.single()
+            else -> null
+        }
+        val evidenceParts = listOf(
+            "fields=${fieldTypes.size}",
+            "interfaces=${senderInterfaces.size}",
+            "candidates=${candidates.size}",
+            "complete=${completeCandidates.size}",
+            "source=${selected?.source ?: "-"}",
+            "methods=${selected?.messageMethods ?: 0}/${selected?.commandMethods ?: 0}",
+            "type=${selected?.type?.name ?: "-"}",
+        )
+        val evidence = (
+            evidenceParts +
+                senderErrors.take(1).map { "error=$it" } +
+                implementorErrors.take(1).map { "scan=$it" }
+            )
+            .joinToString(",")
+            .take(360)
+        return ChronosSenderScan(
+            type = selected?.type,
+            evidence = evidence,
+            missing = if (selected == null) "$CHRONOS_ID_MESSAGE_SENDER($evidence)" else null,
+        )
+    }
+
+    private fun Method.isChronosMessageSendMethod(): Boolean =
+        isChronosVoidLikeReturn() &&
+            !Modifier.isStatic(modifiers) &&
+            !Modifier.isAbstract(modifiers) &&
+            parameterCount == 2 &&
+            Map::class.java.isAssignableFrom(parameterTypes[1])
+
+    private fun Method.isChronosCommandDmListMethod(function2Type: Class<*>): Boolean =
+        isChronosSenderRequestMethod(function2Type, allowAbstract = false)
+
+    private fun Method.isChronosSenderRequestMethod(function2Type: Class<*>?, allowAbstract: Boolean): Boolean =
+        isChronosVoidLikeReturn() &&
+            !Modifier.isStatic(modifiers) &&
+            (allowAbstract || !Modifier.isAbstract(modifiers)) &&
+            parameterCount == 5 &&
+            Map::class.java.isAssignableFrom(parameterTypes[1]) &&
+            Class::class.java.isAssignableFrom(parameterTypes[2]) &&
+            (function2Type == null || parameterTypes[3].canAcceptChronosFunction2(function2Type)) &&
+            (function2Type == null || parameterTypes[4].canAcceptChronosFunction2(function2Type))
+
+    private fun Class<*>.isChronosSenderInterface(function2Type: Class<*>?): Boolean {
+        val methods = allMethods().toList()
+        return methods.any { it.isChronosSenderRequestMethod(function2Type, allowAbstract = true) } &&
+            methods.any { it.isChronosSenderSyncMethod() }
+    }
+
+    private fun Method.isChronosSenderSyncMethod(): Boolean =
+        !Modifier.isStatic(modifiers) &&
+            parameterCount == 2 &&
+            Class::class.java.isAssignableFrom(parameterTypes[0]) &&
+            !isChronosVoidLikeReturn()
+
+    private fun Class<*>.chronosImplementedInterfaces(): Sequence<Class<*>> = sequence {
+        val seen = HashSet<String>()
+        val pending = java.util.ArrayDeque<Class<*>>()
+        pending.add(this@chronosImplementedInterfaces)
+        while (!pending.isEmpty()) {
+            val type = pending.removeFirst()
+            type.interfaces.forEach { iface ->
+                if (seen.add(iface.name)) {
+                    yield(iface)
+                    pending.add(iface)
+                }
+            }
+            type.superclass?.let(pending::add)
+        }
+    }
+
+    private fun Method.isChronosVoidLikeReturn(): Boolean =
+        returnType == Void.TYPE || returnType.name == "kotlin.Unit"
+
+    private fun Class<*>.canAcceptChronosFunction2(function2Type: Class<*>): Boolean =
+        this == Any::class.java || isAssignableFrom(function2Type)
+
     private fun MutableList<Method>.addParserMethod(
         classLoader: ClassLoader,
         className: String,
@@ -3167,7 +3438,54 @@ object BiliSymbolResolver {
                 !Modifier.isStatic(it.modifiers)
         }?.apply { isAccessible = true }
 
-    private fun Class<*>.isCommentActionType(): Boolean {
+    private fun findQuickReplyActionClasses(
+        classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
+    ): QuickReplyActionClassScan {
+        val currentBridge = bridge() ?: return QuickReplyActionClassScan(
+            classes = emptyList(),
+            candidates = 0,
+            error = "DexKitBridge unavailable",
+        )
+        val stringCandidates = runCatching {
+            currentBridge.findClass(
+                FindClass.create()
+                    .searchPackages("com.bilibili", "Kj", "Dj")
+                    .matcher(ClassMatcher.create().usingStrings(QUICK_REPLY_SHOW_PUBLISH_DIALOG_STRING)),
+            ).map { it.name }.toList()
+        }.getOrElse { throwable ->
+            return QuickReplyActionClassScan(
+                classes = emptyList(),
+                candidates = 0,
+                error = throwable.scanMessage(),
+            )
+        }
+        val classes = stringCandidates
+            .asSequence()
+            .flatMap { name -> sequenceOf(name, name.substringBefore('$')).distinct() }
+            .mapNotNull { classLoader.loadClassOrNull(it) }
+            .filter { it.hasPublishDialogActionChild() }
+            .flatMap { type ->
+                generateSequence(type) { it.superclass?.takeIf { parent -> parent != Any::class.java } }
+                    .filter { it.isCommentActionBaseType(emptyList()) || it.hasPublishDialogActionChild() }
+            }
+            .distinctBy { it.name }
+            .toList()
+        return QuickReplyActionClassScan(
+            classes = classes,
+            candidates = stringCandidates.size,
+            error = null,
+        )
+    }
+
+    private fun Class<*>.hasPublishDialogActionChild(): Boolean =
+        declaredClasses.any { child ->
+            child.declaredFields.any { field -> field.type.isQuickReplyDialogIntentType() } &&
+                child.declaredFields.isNotEmpty()
+        }
+
+    private fun Class<*>.isCommentActionType(actionBases: List<Class<*>> = emptyList()): Boolean {
+        if (actionBases.any { it.isAssignableFrom(this) }) return true
         val simpleName = simpleName
         val className = name
         return className.contains(".comment3.", ignoreCase = true) &&
@@ -3175,7 +3493,8 @@ object BiliSymbolResolver {
                 simpleName.contains("Intent", ignoreCase = true))
     }
 
-    private fun Class<*>.isCommentActionBaseType(): Boolean {
+    private fun Class<*>.isCommentActionBaseType(actionBases: List<Class<*>> = emptyList()): Boolean {
+        if (actionBases.any { it == this || it.isAssignableFrom(this) || this.isAssignableFrom(it) }) return true
         if (name == "Kj.AbstractC8070c") return true
         if (simpleName.contains("Action", ignoreCase = true) && name.startsWith("Kj.")) return true
         return allMethods().any { method ->
@@ -3692,6 +4011,7 @@ object BiliSymbolResolver {
         "Kj.AbstractC8070c",
         "Kj.c",
     )
+    private const val QUICK_REPLY_SHOW_PUBLISH_DIALOG_STRING = "ShowPublishDialog(args="
     private val QUICK_REPLY_DIALOG_COLLECTOR_CLASSES = arrayOf(
         "com.bilibili.app.comment3.ui.CommentContainerImpl\$attachRepository\$5",
         "com.bilibili.p4439app.comment3.p4518ui.CommentContainerImpl\$attachRepository\$5",
@@ -3808,7 +4128,6 @@ object BiliSymbolResolver {
         "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.a"
     private const val REMOTE_SERVICE_HANDLER =
         "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.remote.RemoteServiceHandler"
-    private const val CHRONOS_MESSAGE_SENDER = "Hh1.d"
     private const val ADD_CUSTOM_DANMAKU_REQUEST =
         "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.send.AddCustomDanmaku\$Request"
     private const val DM_VIEW_CHANGE_REQUEST =
@@ -3850,6 +4169,13 @@ object BiliSymbolResolver {
     private const val NOTIFY_COMMERCIAL_EVENT_REQUEST =
         "tv.danmaku.biliplayerv2.service.interact.biz.chronos.chronosrpc.methods.receive.NotifyCommercialEvent\$Request"
     private const val KOTLIN_FUNCTION2 = "kotlin.jvm.functions.Function2"
+    private const val BILI_UPGRADE_INFO = "tv.danmaku.bili.update.model.BiliUpgradeInfo"
+    private val BLOCK_UPDATE_STRING_RULES = listOf(
+        listOf("Do sync http request."),
+        listOf("Http request result %s, saved to file cache."),
+        listOf("Nothing to update, clean caches."),
+        listOf("code", "message"),
+    )
     private val DETAIL_STATE_GETTERS = listOf(
         "getFollowStates",
         "getReserveState",
@@ -3880,6 +4206,29 @@ private data class RelateGameComponentScan(
     val type: Class<*>?,
     val evidence: String,
 )
+
+private data class ChronosSenderScan(
+    val type: Class<*>?,
+    val evidence: String,
+    val missing: String?,
+)
+
+private data class ChronosSenderCandidate(
+    val type: Class<*>,
+    val source: String,
+    val messageMethods: Int,
+    val commandMethods: Int,
+)
+
+private data class QuickReplyActionClassScan(
+    val classes: List<Class<*>>,
+    val candidates: Int,
+    val error: String?,
+) {
+    val evidence: String =
+        "quickClasses=${classes.size},quickCandidates=$candidates" +
+            error?.let { ",quickError=${it.take(120)}" }.orEmpty()
+}
 
 private data class ClassStringScan(
     val type: Class<*>?,
