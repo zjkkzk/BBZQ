@@ -42,6 +42,7 @@ object ModuleSettings {
     const val KEY_HIDDEN_HOME_COMPONENTS = "hidden_home_components"
     const val KEY_KNOWN_HOME_COMPONENTS = "known_home_components"
     const val KEY_PURIFY_STORY_VIDEO_AD_ENABLED = "purify_story_video_ad_enabled"
+    const val KEY_STORY_VIDEO_DEFAULT_LAUNCH_ENABLED = "story_video_default_launch_enabled"
     const val KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED = "story_video_immersive_fullscreen_enabled"
     const val KEY_STORY_VIDEO_KEEP_DANMAKU_ON_COMMENT_ENABLED = "story_video_keep_danmaku_on_comment_enabled"
     const val KEY_STORY_VIDEO_COMPONENT_ALPHA = "story_video_component_alpha"
@@ -130,17 +131,10 @@ object ModuleSettings {
     )
 
     val storyVideoAdTags = listOf(
-        StoryVideoAdTag("ad", "广告", null),
-        StoryVideoAdTag("live", "直播", "直播"),
-        StoryVideoAdTag("short", "短剧", "短剧"),
-        StoryVideoAdTag("shopping", "购物", "购物"),
-        StoryVideoAdTag("tv", "电视剧", "电视剧"),
-        StoryVideoAdTag("doc", "纪录片", "纪录片"),
-        StoryVideoAdTag("ent", "娱乐", "娱乐"),
-        StoryVideoAdTag("movie", "电影", "电影"),
-        StoryVideoAdTag("music", "音乐", "音乐"),
-        StoryVideoAdTag("topic", "话题", "话题"),
+        StoryVideoAdTag("ad", "广告"),
+        StoryVideoAdTag("live", "直播"),
     )
+    private val storyVideoAdTagKeys = storyVideoAdTags.mapTo(linkedSetOf()) { it.key }
 
     val skipVideoAdCategories = listOf(
         SponsorBlockCategory("sponsor", "赞助 / 恰饭", "付费推广、推荐和直接广告。", 0xFF00D400.toInt(), 0xFF007800.toInt()),
@@ -214,6 +208,9 @@ object ModuleSettings {
         ExportableConfigSpec(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_HIDE_ALL_HOME_COMPONENTS_ENABLED, false) },
         ExportableConfigSpec(KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_CUSTOM_HOME_COMPONENT_HIDE_ENABLED, false) },
         ExportableConfigSpec(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false) },
+        ExportableConfigSpec(KEY_STORY_VIDEO_DEFAULT_LAUNCH_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_STORY_VIDEO_DEFAULT_LAUNCH_ENABLED, false)
+        },
         ExportableConfigSpec(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, ExportableValueType.BOOLEAN) {
             it.getBoolean(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, false)
         },
@@ -452,6 +449,9 @@ object ModuleSettings {
     fun isPurifyStoryVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PURIFY_STORY_VIDEO_AD_ENABLED, false)
 
+    fun isStoryVideoDefaultLaunchEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_STORY_VIDEO_DEFAULT_LAUNCH_ENABLED, false)
+
     fun isStoryVideoImmersiveFullscreenEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED, false)
 
@@ -465,8 +465,9 @@ object ModuleSettings {
         getStoryVideoComponentAlphaPercent(prefs) / 100f
 
     fun getPurifyStoryVideoAdTags(prefs: SharedPreferences): Set<String> =
-        prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)
-            ?: defaultStoryVideoAdTags
+        (prefs.getStringSet(KEY_PURIFY_STORY_VIDEO_AD_TAGS, defaultStoryVideoAdTags)
+            ?: defaultStoryVideoAdTags)
+            .filterTo(linkedSetOf()) { it in storyVideoAdTagKeys }
 
     fun isCustomDownloadThreadEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_CUSTOM_DOWNLOAD_THREAD_ENABLED, false)
@@ -598,7 +599,6 @@ enum class SkipVideoAdMode(val value: Int, val label: String) {
 data class StoryVideoAdTag(
     val key: String,
     val label: String,
-    val cartText: String?,
 )
 
 data class SponsorBlockCategory(

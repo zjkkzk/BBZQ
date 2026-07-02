@@ -30,6 +30,7 @@ import io.github.bbzq.feats.hook.SkipVideoAdProgressHook
 import io.github.bbzq.feats.hook.SplashAdHook
 import io.github.bbzq.feats.hook.StoryComponentAlphaHook
 import io.github.bbzq.feats.hook.StoryDanmakuHook
+import io.github.bbzq.feats.hook.StoryDefaultLaunchHook
 import io.github.bbzq.feats.hook.StoryFullscreenHook
 import io.github.bbzq.feats.hook.StoryPlayerAdHook
 import io.github.bbzq.feats.hook.BlockUpdateHook
@@ -115,6 +116,7 @@ object RoamingRuntime {
                 ::HomeRecommendPreloadHook,
                 ::DynamicPageHook,
                 ::HomeTopBarPurifyHook,
+                ::StoryDefaultLaunchHook,
                 ::StoryPlayerAdHook,
                 ::StoryFullscreenHook,
                 ::StoryDanmakuHook,

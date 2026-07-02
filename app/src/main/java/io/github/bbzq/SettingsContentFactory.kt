@@ -561,6 +561,12 @@ class SettingsContentFactory(
     private fun storyRows(): List<View> {
         val rows = mutableListOf<View>()
         rows += createSwitchRow(
+            context.getString(R.string.story_video_default_launch_title),
+            context.getString(R.string.story_video_default_launch_summary),
+            ModuleSettings.KEY_STORY_VIDEO_DEFAULT_LAUNCH_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
             context.getString(R.string.story_video_immersive_fullscreen_title),
             context.getString(R.string.story_video_immersive_fullscreen_summary),
             ModuleSettings.KEY_STORY_VIDEO_IMMERSIVE_FULLSCREEN_ENABLED,

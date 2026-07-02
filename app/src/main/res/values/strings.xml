@@ -61,8 +61,10 @@
     <string name="unlock_comment_gif_summary">恢复评论区 GIF 缩略图播放，并移除图片右上角的大会员专属角标。</string>
 
     <!-- 竪屏視頻 -->
+    <string name="story_video_default_launch_title">启动进入竖屏视频</string>
+    <string name="story_video_default_launch_summary">打开哔哩哔哩时自动进入竖屏视频流。</string>
     <string name="purify_story_video_ad_title">净化竖屏视频广告</string>
-    <string name="purify_story_video_ad_summary">按标签过滤竖屏视频流中的广告、直播、购物和推广内容。</string>
+    <string name="purify_story_video_ad_summary">按标签过滤竖屏视频流中的广告和直播内容。</string>
     <string name="story_video_immersive_fullscreen_title">竖屏视频沉浸全屏</string>
     <string name="story_video_immersive_fullscreen_summary">进入竖屏视频页时隐藏通知栏和手势导航栏。</string>
     <string name="story_video_keep_danmaku_on_comment_title">禁止隐藏弹幕</string>
