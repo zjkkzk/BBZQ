@@ -1,16 +1,24 @@
 package io.github.bbzq.feats.hook
 
 import android.app.Activity
+import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import io.github.bbzq.ModuleSettings
 import io.github.bbzq.feats.BaseRoamingHook
 import io.github.bbzq.feats.RoamingEnv
+import io.github.bbzq.feats.callMethod
+import io.github.bbzq.feats.from
 import io.github.bbzq.feats.hookAfterMethod
 import java.util.ArrayDeque
+import java.util.WeakHashMap
 
 class DynamicPageHook(env: RoamingEnv) : BaseRoamingHook(env) {
+    private val activeSweepRoots = WeakHashMap<View, Boolean>()
+
     override fun startHook() {
         if (env.processName != env.packageName) return
         if (
@@ -24,27 +32,85 @@ class DynamicPageHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
         env.hookAfterMethod(Activity::class.java, "onResume") { param ->
             val activity = param.thisObject as? Activity ?: return@hookAfterMethod
-            scheduleSweep(activity)
+            scheduleSweep(activity, activity.window?.decorView ?: return@hookAfterMethod, activity.javaClass.name)
+        }
+        val fragmentClass = ANDROIDX_FRAGMENT_CLASS.from(classLoader)
+        val fragmentHookCount = fragmentClass?.let { type ->
+            env.hookAfterMethod(type, "onViewCreated", View::class.java, Bundle::class.java) { param ->
+                val fragment = param.thisObject ?: return@hookAfterMethod
+                val view = param.args.getOrNull(0) as? View ?: return@hookAfterMethod
+                val activity = fragment.callMethod("getActivity") as? Activity ?: return@hookAfterMethod
+                val ownerName = fragment.javaClass.name
+                if (!isDynamicFragmentOwner(ownerName) && !isDynamicCandidate(activity, view, ownerName)) {
+                    return@hookAfterMethod
+                }
+                scheduleSweep(activity, view, ownerName)
+            }
+        } ?: 0
+        if (fragmentHookCount == 0) {
+            log("DynamicPage Fragment.onViewCreated hook unavailable")
         }
 
-        log("startHook: DynamicPage Activity.onResume")
+        log("startHook: DynamicPage Activity.onResume + Fragment.onViewCreated")
     }
 
-    private fun scheduleSweep(activity: Activity) {
-        val root = activity.window?.decorView ?: return
+    private fun scheduleSweep(activity: Activity, root: View, ownerName: String) {
         SWEEP_DELAYS_MS.forEach { delay ->
             root.postDelayed({
                 runCatching {
-                    sweep(activity, root)
+                    sweep(activity, root, ownerName)
                 }.onFailure {
                     log("DynamicPage sweep failed for ${activity.javaClass.name}", it)
                 }
             }, delay)
         }
+        installTemporaryLayoutSweep(activity, root, ownerName)
     }
 
-    private fun sweep(activity: Activity, root: View) {
-        if (!isDynamicCandidate(activity, root)) return
+    private fun installTemporaryLayoutSweep(activity: Activity, root: View, ownerName: String) {
+        if (activeSweepRoots.put(root, true) != null) return
+
+        val startedAt = SystemClock.uptimeMillis()
+        var lastSweepAt = 0L
+        var removed = false
+        lateinit var listener: ViewTreeObserver.OnGlobalLayoutListener
+
+        fun removeListener() {
+            if (removed) return
+            removed = true
+            runCatching {
+                val observer = root.viewTreeObserver
+                if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+            }
+            activeSweepRoots.remove(root)
+        }
+
+        listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val now = SystemClock.uptimeMillis()
+            if (now - startedAt > GLOBAL_SWEEP_WINDOW_MS) {
+                removeListener()
+                return@OnGlobalLayoutListener
+            }
+            if (now - lastSweepAt < GLOBAL_SWEEP_THROTTLE_MS) return@OnGlobalLayoutListener
+            lastSweepAt = now
+            runCatching {
+                sweep(activity, root, ownerName)
+            }.onFailure {
+                log("DynamicPage layout sweep failed for ${activity.javaClass.name}", it)
+            }
+        }
+
+        val observer = root.viewTreeObserver
+        if (observer.isAlive) {
+            observer.addOnGlobalLayoutListener(listener)
+            root.postDelayed(::removeListener, GLOBAL_SWEEP_WINDOW_MS)
+        } else {
+            activeSweepRoots.remove(root)
+        }
+    }
+
+    private fun sweep(activity: Activity, root: View, ownerName: String): Boolean {
+        if (!isDynamicCandidate(activity, root, ownerName)) return false
 
         var changed = false
         if (ModuleSettings.isDynamicPreferredVideoTabEnabled(prefs)) {
@@ -60,17 +126,19 @@ class DynamicPageHook(env: RoamingEnv) : BaseRoamingHook(env) {
         if (changed) {
             log("DynamicPage updated for ${activity.javaClass.name}")
         }
+        return changed
     }
 
-    private fun isDynamicCandidate(activity: Activity, root: View): Boolean {
+    private fun isDynamicCandidate(activity: Activity, root: View, ownerName: String): Boolean {
+        if (isDynamicFragmentOwner(ownerName)) return true
         val className = activity.javaClass.name.lowercase()
-        if (DYNAMIC_ACTIVITY_KEYWORDS.any(className::contains)) return true
+        if (matchesOwner(className, DYNAMIC_ACTIVITY_KEYWORDS)) return true
         return findMatchingTextView(root, DYNAMIC_TAB_LABELS) != null
     }
 
     private fun clickPreferredVideoTab(root: View): Boolean {
         val videoTab = findMatchingTextView(root, VIDEO_TAB_LABELS) ?: return false
-        if (videoTab.isSelected || videoTab.isActivated) return false
+        if (isSelectedOrActivated(videoTab)) return false
         return performClick(videoTab)
     }
 
@@ -88,9 +156,9 @@ class DynamicPageHook(env: RoamingEnv) : BaseRoamingHook(env) {
     }
 
     private fun resolveHideTarget(view: View): View {
+        findClickableAncestor(view)?.let { return it }
         val parent = view.parent as? View
         if (parent == null || parent === view) return view
-        if (parent.isClickable || parent.hasOnClickListeners()) return parent
         if (parent is ViewGroup && parent.childCount <= 3) return parent
         return view
     }
@@ -141,21 +209,63 @@ class DynamicPageHook(env: RoamingEnv) : BaseRoamingHook(env) {
             .orEmpty()
 
     private fun performClick(view: View): Boolean {
-        if (!view.isEnabled || !view.isShown) return false
-        if (view.isClickable || view.hasOnClickListeners()) return view.performClick()
-        val parent = view.parent as? View ?: return false
-        return parent.isEnabled && parent.isShown && (parent.isClickable || parent.hasOnClickListeners()) && parent.performClick()
+        val target = findClickableAncestor(view) ?: return false
+        return target.performClick()
+    }
+
+    private fun findClickableAncestor(view: View): View? {
+        var current: View? = view
+        var depth = 0
+        while (current != null && depth <= MAX_PARENT_DEPTH) {
+            if (
+                current.isEnabled &&
+                current.isShown &&
+                (current.isClickable || current.hasOnClickListeners())
+            ) {
+                return current
+            }
+            current = current.parent as? View
+            depth += 1
+        }
+        return null
+    }
+
+    private fun isSelectedOrActivated(view: View): Boolean {
+        var current: View? = view
+        var depth = 0
+        while (current != null && depth <= MAX_PARENT_DEPTH) {
+            if (current.isSelected || current.isActivated) return true
+            current = current.parent as? View
+            depth += 1
+        }
+        return false
+    }
+
+    private fun isDynamicFragmentOwner(rawName: String): Boolean =
+        matchesOwner(rawName, DYNAMIC_FRAGMENT_KEYWORDS)
+
+    private fun matchesOwner(rawName: String, keywords: List<String>): Boolean {
+        val className = rawName.lowercase()
+        return keywords.any(className::contains)
     }
 
     private companion object {
-        private val SWEEP_DELAYS_MS = longArrayOf(0L, 250L, 700L)
-        private const val MAX_VIEW_SCAN_NODES = 512
+        private val SWEEP_DELAYS_MS = longArrayOf(0L, 120L, 300L, 700L, 1500L, 3000L)
+        private const val GLOBAL_SWEEP_WINDOW_MS = 4000L
+        private const val GLOBAL_SWEEP_THROTTLE_MS = 120L
+        private const val MAX_VIEW_SCAN_NODES = 1500
+        private const val MAX_PARENT_DEPTH = 8
+        private const val ANDROIDX_FRAGMENT_CLASS = "androidx.fragment.app.Fragment"
         private val DYNAMIC_ACTIVITY_KEYWORDS = listOf(
             "dynamic",
             "space",
             "following",
             "feed",
             "opus",
+        )
+        private val DYNAMIC_FRAGMENT_KEYWORDS = listOf(
+            "followinglist.home.mediator",
+            "mediatorfragment",
         )
         private val DYNAMIC_TAB_LABELS = setOf("同城", "校园", "视频")
         private val VIDEO_TAB_LABELS = setOf("视频")

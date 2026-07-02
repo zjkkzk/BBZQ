@@ -2048,7 +2048,7 @@ object BiliSymbolResolver {
     private fun Method.isPausedPageRequestMethod(): Boolean =
         name == "requestPausedPage" &&
             parameterCount > 0 &&
-            Continuation::class.java.isAssignableFrom(parameterTypes.last()) &&
+            parameterTypes.last().isKotlinContinuationTypeName() &&
             returnType == Any::class.java
 
     private fun findRelateGameComponentClass(
