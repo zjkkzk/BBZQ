@@ -87,7 +87,7 @@ data class BiliHookSymbols(
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 24
+        const val CACHE_SCHEMA_VERSION = 25
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -141,7 +141,7 @@ data class BiliHookSymbols(
 }
 
 object DexKitRuleVersions {
-    const val CURRENT = 44
+    const val CURRENT = 45
 }
 
 data class HookPointStatus(
@@ -1121,6 +1121,11 @@ data class VideoDetailBannerAdSymbols(
     val underPlayerTypeName: String?,
     val relateTypeName: String?,
     val merchandiseTypeName: String?,
+    val pausedPageTypeName: String?,
+    val adPanelTypeName: String?,
+    val requestPausedPage: MethodDescriptor?,
+    val getPausedPagePanel: MethodDescriptor?,
+    val getBrandPausedPagePanel: MethodDescriptor?,
     val relateGameComponentTypeName: String?,
     val simpleViewEntryConstructor: ConstructorDescriptor?,
     val createViewEntry: MethodDescriptor?,
@@ -1134,6 +1139,11 @@ data class VideoDetailBannerAdSymbols(
         .putOpt("underPlayerTypeName", underPlayerTypeName)
         .putOpt("relateTypeName", relateTypeName)
         .putOpt("merchandiseTypeName", merchandiseTypeName)
+        .putOpt("pausedPageTypeName", pausedPageTypeName)
+        .putOpt("adPanelTypeName", adPanelTypeName)
+        .putOpt("requestPausedPage", requestPausedPage?.toJson())
+        .putOpt("getPausedPagePanel", getPausedPagePanel?.toJson())
+        .putOpt("getBrandPausedPagePanel", getBrandPausedPagePanel?.toJson())
         .putOpt("relateGameComponentTypeName", relateGameComponentTypeName)
         .putOpt("simpleViewEntryConstructor", simpleViewEntryConstructor?.toJson())
         .putOpt("createViewEntry", createViewEntry?.toJson())
@@ -1150,8 +1160,37 @@ data class VideoDetailBannerAdSymbols(
         val underPlayerType = underPlayerTypeName?.let(classLoader::loadClassOrNull)
         val relateType = relateTypeName?.let(classLoader::loadClassOrNull)
         val merchandiseType = merchandiseTypeName?.let(classLoader::loadClassOrNull)
+        val pausedPageType = pausedPageTypeName?.let(classLoader::loadClassOrNull)
+        val adPanelType = adPanelTypeName?.let(classLoader::loadClassOrNull)
+        val requestPausedPageMethod = requestPausedPage?.let { descriptor ->
+            val owner = classLoader.loadClassOrNull(descriptor.declaringClassName) ?: return@let null
+            descriptor.restore(owner)
+        }
+        val getPausedPagePanelMethod = getPausedPagePanel?.let { descriptor ->
+            val owner = classLoader.loadClassOrNull(descriptor.declaringClassName) ?: return@let null
+            descriptor.restore(owner)
+        }
+        val getBrandPausedPagePanelMethod = getBrandPausedPagePanel?.let { descriptor ->
+            val owner = classLoader.loadClassOrNull(descriptor.declaringClassName) ?: return@let null
+            descriptor.restore(owner)
+        }
         val relateGameComponentType = relateGameComponentTypeName?.let(classLoader::loadClassOrNull)
-        if (getVideoDetail != null && (getVideoDetailMethod == null || videoDetailType == null || underPlayerType == null)) {
+        if (getVideoDetail != null && (getVideoDetailMethod == null || videoDetailType == null)) {
+            return null
+        }
+        if (underPlayerTypeName != null && underPlayerType == null) {
+            return null
+        }
+        if (requestPausedPage != null && (pausedPageType == null || requestPausedPageMethod == null)) {
+            return null
+        }
+        if ((getPausedPagePanel != null || getBrandPausedPagePanel != null) && adPanelType == null) {
+            return null
+        }
+        if (getPausedPagePanel != null && getPausedPagePanelMethod == null) {
+            return null
+        }
+        if (getBrandPausedPagePanel != null && getBrandPausedPagePanelMethod == null) {
             return null
         }
 
@@ -1181,6 +1220,11 @@ data class VideoDetailBannerAdSymbols(
             underPlayerType = underPlayerType,
             relateType = relateType,
             merchandiseType = merchandiseType,
+            pausedPageType = pausedPageType,
+            adPanelType = adPanelType,
+            requestPausedPage = requestPausedPageMethod,
+            getPausedPagePanel = getPausedPagePanelMethod,
+            getBrandPausedPagePanel = getBrandPausedPagePanelMethod,
             relateGameComponentType = relateGameComponentType,
             simpleViewEntryConstructor = constructor,
             createViewEntry = create,
@@ -1196,6 +1240,11 @@ data class VideoDetailBannerAdSymbols(
             underPlayerTypeName = obj.optString("underPlayerTypeName").takeIf { it.isNotBlank() },
             relateTypeName = obj.optString("relateTypeName").takeIf { it.isNotBlank() },
             merchandiseTypeName = obj.optString("merchandiseTypeName").takeIf { it.isNotBlank() },
+            pausedPageTypeName = obj.optString("pausedPageTypeName").takeIf { it.isNotBlank() },
+            adPanelTypeName = obj.optString("adPanelTypeName").takeIf { it.isNotBlank() },
+            requestPausedPage = obj.optJSONObject("requestPausedPage")?.let(MethodDescriptor::fromJson),
+            getPausedPagePanel = obj.optJSONObject("getPausedPagePanel")?.let(MethodDescriptor::fromJson),
+            getBrandPausedPagePanel = obj.optJSONObject("getBrandPausedPagePanel")?.let(MethodDescriptor::fromJson),
             relateGameComponentTypeName = obj.optString("relateGameComponentTypeName").takeIf { it.isNotBlank() },
             simpleViewEntryConstructor = obj.optJSONObject("simpleViewEntryConstructor")?.let(ConstructorDescriptor::fromJson),
             createViewEntry = obj.optJSONObject("createViewEntry")?.let(MethodDescriptor::fromJson),
@@ -1212,6 +1261,11 @@ data class RestoredVideoDetailBannerAdSymbols(
     val underPlayerType: Class<*>?,
     val relateType: Class<*>?,
     val merchandiseType: Class<*>?,
+    val pausedPageType: Class<*>?,
+    val adPanelType: Class<*>?,
+    val requestPausedPage: Method?,
+    val getPausedPagePanel: Method?,
+    val getBrandPausedPagePanel: Method?,
     val relateGameComponentType: Class<*>?,
     val simpleViewEntryConstructor: Constructor<*>?,
     val createViewEntry: Method?,

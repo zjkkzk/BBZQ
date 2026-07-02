@@ -84,6 +84,8 @@ object BiliSymbolResolver {
     private const val HP_STORY_COMPONENT_ALPHA_TOP = "StoryComponentAlphaHook.TopControls"
     private const val HP_VIDEO_DETAIL_BANNER_AD = "VideoDetailBannerAdHook.InstallPoints"
     private const val HP_VIDEO_DETAIL_BANNER_PROXY = "VideoDetailBannerAdHook.Proxy"
+    private const val HP_VIDEO_DETAIL_BANNER_PAUSED_PAGE_REQUEST = "VideoDetailBannerAdHook.PausedPageRequest"
+    private const val HP_VIDEO_DETAIL_BANNER_PAUSED_PAGE_PANEL = "VideoDetailBannerAdHook.PausedPagePanel"
     private const val HP_VIDEO_DETAIL_BANNER_RELATE_GAME = "VideoDetailBannerAdHook.RelateGame"
     private const val HP_COMMENT_PICTURE = "CommentPictureHook.InitView"
     private const val HP_HOME_TOP_BAR = "HomeTopBarPurifyHook.InstallPoints"
@@ -1910,6 +1912,8 @@ object BiliSymbolResolver {
         val underPlayerType = classLoader.loadClassOrNull(I_AD_UNDER_PLAYER)
         val relateType = classLoader.loadClassOrNull(I_AD_VIDEO_RELATE)
         val merchandiseType = classLoader.loadClassOrNull(I_AD_MERCHANDISE)
+        val pausedPageType = classLoader.loadClassOrNull(I_VD_PAUSED_PAGE)
+        val adPanelType = classLoader.loadClassOrNull(I_AD_PANEL)
         val getVideoDetail = if (bizKt != null && videoDetailType != null) {
             bizKt.allMethods().firstOrNull {
                 it.name == "getGAdVideoDetail" &&
@@ -1919,6 +1923,15 @@ object BiliSymbolResolver {
             }
         } else {
             null
+        }
+        val requestPausedPage = pausedPageType?.allMethods()?.firstOrNull { it.isPausedPageRequestMethod() }
+        val getPausedPagePanel = adPanelType?.allMethods()?.firstOrNull {
+            it.name == "getPausedPagePanel" &&
+                it.parameterCount == 1
+        }
+        val getBrandPausedPagePanel = adPanelType?.allMethods()?.firstOrNull {
+            it.name == "getBrandPausedPagePanel" &&
+                it.parameterCount == 2
         }
 
         val baseComponent = classLoader.loadClassOrNull(GEMINI_BINDING_COMPONENT)
@@ -1953,21 +1966,43 @@ object BiliSymbolResolver {
         }.getOrNull()
 
         val hasProxyHook = getVideoDetail != null && videoDetailType != null && underPlayerType != null
+        val hasPausedPageRequestHook = getVideoDetail != null &&
+            videoDetailType != null &&
+            pausedPageType != null &&
+            requestPausedPage != null
+        val hasPausedPagePanelHook = getVideoDetail != null &&
+            videoDetailType != null &&
+            adPanelType != null &&
+            getPausedPagePanel != null &&
+            getBrandPausedPagePanel != null
         val hasRelateGameHook = simpleViewEntryConstructor != null &&
             createViewEntry != null &&
             bindToView != null &&
             unitField != null &&
             relateGameComponent.type != null
-        if (!hasProxyHook && !hasRelateGameHook) {
+        if (!hasProxyHook && !hasPausedPageRequestHook && !hasPausedPagePanelHook && !hasRelateGameHook) {
             return SymbolScanResult.Missing("video detail banner hook points not found")
         }
 
         val symbols = VideoDetailBannerAdSymbols(
             getVideoDetail = getVideoDetail?.let(MethodDescriptor::of),
-            videoDetailTypeName = if (hasProxyHook) videoDetailType?.name else null,
+            videoDetailTypeName = if (hasProxyHook || hasPausedPageRequestHook || hasPausedPagePanelHook) {
+                videoDetailType?.name
+            } else {
+                null
+            },
             underPlayerTypeName = if (hasProxyHook) underPlayerType?.name else null,
             relateTypeName = relateType?.name,
             merchandiseTypeName = merchandiseType?.name,
+            pausedPageTypeName = if (hasPausedPageRequestHook) pausedPageType?.name else null,
+            adPanelTypeName = if (hasPausedPagePanelHook) adPanelType?.name else null,
+            requestPausedPage = if (hasPausedPageRequestHook) requestPausedPage?.let(MethodDescriptor::of) else null,
+            getPausedPagePanel = if (hasPausedPagePanelHook) getPausedPagePanel?.let(MethodDescriptor::of) else null,
+            getBrandPausedPagePanel = if (hasPausedPagePanelHook) {
+                getBrandPausedPagePanel?.let(MethodDescriptor::of)
+            } else {
+                null
+            },
             relateGameComponentTypeName = if (hasRelateGameHook) relateGameComponent.type?.name else null,
             simpleViewEntryConstructor = if (hasRelateGameHook) {
                 simpleViewEntryConstructor?.let(ConstructorDescriptor::of)
@@ -1977,7 +2012,9 @@ object BiliSymbolResolver {
             createViewEntry = if (hasRelateGameHook) createViewEntry?.let(MethodDescriptor::of) else null,
             bindToView = if (hasRelateGameHook) bindToView?.let(MethodDescriptor::of) else null,
             kotlinUnitField = if (hasRelateGameHook) unitField?.let(FieldDescriptor::of) else null,
-            evidence = "proxy=$hasProxyHook,relateGame=$hasRelateGameHook,component=${relateGameComponent.type?.name ?: "-"}",
+            evidence = "proxy=$hasProxyHook,pausedRequest=$hasPausedPageRequestHook," +
+                "pausedPanel=$hasPausedPagePanelHook,relateGame=$hasRelateGameHook," +
+                "component=${relateGameComponent.type?.name ?: "-"}",
         )
         val hookPoints = listOf(
             childHookPoint(
@@ -1985,6 +2022,18 @@ object BiliSymbolResolver {
                 hasProxyHook,
                 "proxy hook dependencies not found",
                 "method=${getVideoDetail != null},detail=${videoDetailType != null},underPlayer=${underPlayerType != null}",
+            ),
+            childHookPoint(
+                HP_VIDEO_DETAIL_BANNER_PAUSED_PAGE_REQUEST,
+                hasPausedPageRequestHook,
+                "paused page request hook dependencies not found",
+                "method=${getVideoDetail != null},detail=${videoDetailType != null},pausedPage=${pausedPageType != null},request=${requestPausedPage != null}",
+            ),
+            childHookPoint(
+                HP_VIDEO_DETAIL_BANNER_PAUSED_PAGE_PANEL,
+                hasPausedPagePanelHook,
+                "paused page panel hook dependencies not found",
+                "method=${getVideoDetail != null},detail=${videoDetailType != null},panel=${adPanelType != null},normal=${getPausedPagePanel != null},brand=${getBrandPausedPagePanel != null}",
             ),
             childHookPoint(
                 HP_VIDEO_DETAIL_BANNER_RELATE_GAME,
@@ -1995,6 +2044,12 @@ object BiliSymbolResolver {
         )
         return SymbolScanResult.Found(symbols, "VideoDetailBannerAd", symbols.evidence, hookPoints)
     }
+
+    private fun Method.isPausedPageRequestMethod(): Boolean =
+        name == "requestPausedPage" &&
+            parameterCount > 0 &&
+            Continuation::class.java.isAssignableFrom(parameterTypes.last()) &&
+            returnType == Any::class.java
 
     private fun findRelateGameComponentClass(
         classLoader: ClassLoader,
@@ -3939,6 +3994,8 @@ object BiliSymbolResolver {
     private const val G_AD_BIZ_KT = "com.bilibili.gripper.api.ad.biz.GAdBizKt"
     private const val G_AD_VIDEO_DETAIL = "com.bilibili.gripper.api.ad.biz.GAdVideoDetail"
     private const val I_AD_UNDER_PLAYER = "com.bilibili.gripper.api.ad.biz.videodetail.underplayer.IAdUnderPlayer"
+    private const val I_AD_PANEL = "com.bilibili.gripper.api.ad.biz.videodetail.IAdPanel"
+    private const val I_VD_PAUSED_PAGE = "com.bilibili.gripper.api.ad.biz.videodetail.pausedpage.IVDPausedPage"
     private const val I_AD_VIDEO_RELATE = "com.bilibili.gripper.api.ad.biz.videodetail.relate.IAdVideoRelate"
     private const val I_AD_MERCHANDISE = "com.bilibili.gripper.api.ad.biz.videodetail.merchandise.IAdMerchandise"
     private const val RELATE_GAME_COMPONENT_PACKAGE =

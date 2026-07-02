@@ -23,6 +23,8 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private val underPlayerProxies = IdentityHashMap<Any, Any>()
     private val relateProxies = IdentityHashMap<Any, Any>()
     private val merchandiseProxies = IdentityHashMap<Any, Any>()
+    private val pausedPageProxies = IdentityHashMap<Any, Any>()
+    private val adPanelProxies = IdentityHashMap<Any, Any>()
     private var blockedCount = 0
 
     override fun startHook() {
@@ -50,7 +52,15 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private fun installGAdVideoDetailProxy(symbols: RestoredVideoDetailBannerAdSymbols): Boolean {
         val getVideoDetail = symbols.getVideoDetail ?: return false
         val videoDetailType = symbols.videoDetailType ?: return false
-        val underPlayerType = symbols.underPlayerType ?: return false
+        if (
+            symbols.underPlayerType == null &&
+            symbols.relateType == null &&
+            symbols.merchandiseType == null &&
+            symbols.pausedPageType == null &&
+            symbols.adPanelType == null
+        ) {
+            return false
+        }
 
         env.hookAfter(getVideoDetail) { param ->
             runCatching {
@@ -59,9 +69,14 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 param.result = videoDetailProxy(
                     original = original,
                     videoDetailType = videoDetailType,
-                    underPlayerType = underPlayerType,
+                    underPlayerType = symbols.underPlayerType,
                     relateType = symbols.relateType,
                     merchandiseType = symbols.merchandiseType,
+                    pausedPageType = symbols.pausedPageType,
+                    adPanelType = symbols.adPanelType,
+                    requestPausedPage = symbols.requestPausedPage,
+                    getPausedPagePanel = symbols.getPausedPagePanel,
+                    getBrandPausedPagePanel = symbols.getBrandPausedPagePanel,
                 )
             }.onFailure {
                 log("VideoDetailBannerAd hook failed at ${getVideoDetail.declaringClass.name}.${getVideoDetail.name}", it)
@@ -69,7 +84,9 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
         }
         log(
             "startHook: VideoDetailBannerAd at ${getVideoDetail.declaringClass.name}.${getVideoDetail.name}, " +
-                "relate=${symbols.relateType != null} merchandise=${symbols.merchandiseType != null}",
+                "underPlayer=${symbols.underPlayerType != null} relate=${symbols.relateType != null} " +
+                "merchandise=${symbols.merchandiseType != null} pausedRequest=${symbols.requestPausedPage != null} " +
+                "pausedPanel=${symbols.getPausedPagePanel != null || symbols.getBrandPausedPagePanel != null}",
         )
         return true
     }
@@ -110,9 +127,14 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
     private fun videoDetailProxy(
         original: Any,
         videoDetailType: Class<*>,
-        underPlayerType: Class<*>,
+        underPlayerType: Class<*>?,
         relateType: Class<*>?,
         merchandiseType: Class<*>?,
+        pausedPageType: Class<*>?,
+        adPanelType: Class<*>?,
+        requestPausedPage: Method?,
+        getPausedPagePanel: Method?,
+        getBrandPausedPagePanel: Method?,
     ): Any = synchronized(videoDetailProxies) {
         videoDetailProxies.getOrPut(original) {
             Proxy.newProxyInstance(
@@ -127,7 +149,7 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                                 System.identityHashCode(proxy)
                             method.isObjectMethod("equals", 1) ->
                                 proxy === args?.firstOrNull()
-                            method.name == "getUnderPlayer" && method.parameterCount == 0 -> {
+                            method.name == "getUnderPlayer" && method.parameterCount == 0 && underPlayerType != null -> {
                                 val underPlayer = invokeOriginal(original, method, args) ?: return@runCatching null
                                 underPlayerProxy(underPlayer, underPlayerType)
                             }
@@ -143,6 +165,28 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                                     merchandiseProxy(merchandise, merchandiseType)
                                 } else {
                                     merchandise
+                                }
+                            }
+                            method.name == "getPausedPage" &&
+                                method.parameterCount == 0 &&
+                                pausedPageType != null &&
+                                requestPausedPage != null -> {
+                                val pausedPage = invokeOriginal(original, method, args) ?: return@runCatching null
+                                if (pausedPageType.isInstance(pausedPage)) {
+                                    pausedPageProxy(pausedPage, pausedPageType, requestPausedPage)
+                                } else {
+                                    pausedPage
+                                }
+                            }
+                            method.name == "getPanel" &&
+                                method.parameterCount == 0 &&
+                                adPanelType != null &&
+                                (getPausedPagePanel != null || getBrandPausedPagePanel != null) -> {
+                                val panel = invokeOriginal(original, method, args) ?: return@runCatching null
+                                if (adPanelType.isInstance(panel)) {
+                                    adPanelProxy(panel, adPanelType, getPausedPagePanel, getBrandPausedPagePanel)
+                                } else {
+                                    panel
                                 }
                             }
                             else ->
@@ -187,6 +231,76 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 )
             }
         }
+
+    private fun pausedPageProxy(
+        original: Any,
+        pausedPageType: Class<*>,
+        requestPausedPage: Method,
+    ): Any = synchronized(pausedPageProxies) {
+        pausedPageProxies.getOrPut(original) {
+            Proxy.newProxyInstance(
+                original.javaClass.classLoader ?: classLoader,
+                collectProxyInterfaces(original, pausedPageType),
+                InvocationHandler { proxy, method, args ->
+                    runCatching {
+                        when {
+                            method.isObjectMethod("toString", 0) ->
+                                "BBZQPausedPageProxy(${original.javaClass.name})"
+                            method.isObjectMethod("hashCode", 0) ->
+                                System.identityHashCode(proxy)
+                            method.isObjectMethod("equals", 1) ->
+                                proxy === args?.firstOrNull()
+                            method.hasSameSignatureAs(requestPausedPage) -> {
+                                logBlocked(method.name)
+                                null
+                            }
+                            else ->
+                                invokeOriginal(original, method, args)
+                        }
+                    }.getOrElse {
+                        log("VideoDetailBannerAd paused page proxy failed at ${method.declaringClass.name}.${method.name}", it)
+                        invokeOriginal(original, method, args)
+                    }
+                },
+            )
+        }
+    }
+
+    private fun adPanelProxy(
+        original: Any,
+        adPanelType: Class<*>,
+        getPausedPagePanel: Method?,
+        getBrandPausedPagePanel: Method?,
+    ): Any = synchronized(adPanelProxies) {
+        adPanelProxies.getOrPut(original) {
+            Proxy.newProxyInstance(
+                original.javaClass.classLoader ?: classLoader,
+                collectProxyInterfaces(original, adPanelType),
+                InvocationHandler { proxy, method, args ->
+                    runCatching {
+                        when {
+                            method.isObjectMethod("toString", 0) ->
+                                "BBZQAdPanelProxy(${original.javaClass.name})"
+                            method.isObjectMethod("hashCode", 0) ->
+                                System.identityHashCode(proxy)
+                            method.isObjectMethod("equals", 1) ->
+                                proxy === args?.firstOrNull()
+                            method.hasSameSignatureAs(getPausedPagePanel) ||
+                                method.hasSameSignatureAs(getBrandPausedPagePanel) -> {
+                                logBlocked(method.name)
+                                null
+                            }
+                            else ->
+                                invokeOriginal(original, method, args)
+                        }
+                    }.getOrElse {
+                        log("VideoDetailBannerAd panel proxy failed at ${method.declaringClass.name}.${method.name}", it)
+                        invokeOriginal(original, method, args)
+                    }
+                },
+            )
+        }
+    }
 
     private fun relateProxy(original: Any, relateType: Class<*>): Any =
         synchronized(relateProxies) {
@@ -259,6 +373,12 @@ class VideoDetailBannerAdHook(env: RoamingEnv) : BaseRoamingHook(env) {
 
     private fun Method.isObjectMethod(name: String, parameterCount: Int): Boolean =
         declaringClass == Any::class.java && this.name == name && this.parameterCount == parameterCount
+
+    private fun Method.hasSameSignatureAs(other: Method?): Boolean =
+        other != null &&
+            name == other.name &&
+            returnType == other.returnType &&
+            parameterTypes.contentEquals(other.parameterTypes)
 
     private fun collectProxyInterfaces(original: Any, primaryType: Class<*>): Array<Class<*>> =
         buildSet {
