@@ -116,8 +116,11 @@ class SettingsContentFactory(
                 pageRoot.addView(createSectionLabel(context.getString(R.string.section_ui_customize)))
                 pageRoot.addView(createSectionCard(bottomBarRows()))
 
-                pageRoot.addView(createSectionLabel(context.getString(R.string.section_playback_purify)))
-                pageRoot.addView(createSectionCard(playbackRows()))
+                val playbackSectionRows = playbackRows()
+                if (playbackSectionRows.isNotEmpty()) {
+                    pageRoot.addView(createSectionLabel(context.getString(R.string.section_playback_purify)))
+                    pageRoot.addView(createSectionCard(playbackSectionRows))
+                }
 
                 pageRoot.addView(createSectionLabel(context.getString(R.string.section_comment_purify)))
                 pageRoot.addView(createSectionCard(commentRows()))
@@ -190,26 +193,28 @@ class SettingsContentFactory(
     }
 
     private fun startupRows(): List<View> {
-        return listOf(
-            createSwitchRow(
+        val rows = mutableListOf<View>()
+        if (hasHiddenFeatures()) {
+            rows += createSwitchRow(
                 context.getString(R.string.startup_skip_splash_title),
                 context.getString(R.string.startup_skip_splash_summary),
                 ModuleSettings.KEY_SKIP_SPLASH_AD_ENABLED,
                 true,
-            ),
-            createSwitchRow(
-                context.getString(R.string.startup_block_teenagers_title),
-                context.getString(R.string.startup_block_teenagers_summary),
-                ModuleSettings.KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED,
-                false,
-            ),
-            createSwitchRow(
-                context.getString(R.string.block_update_title),
-                context.getString(R.string.block_update_summary),
-                ModuleSettings.KEY_BLOCK_UPDATE_ENABLED,
-                false,
-            ),
+            )
+        }
+        rows += createSwitchRow(
+            context.getString(R.string.startup_block_teenagers_title),
+            context.getString(R.string.startup_block_teenagers_summary),
+            ModuleSettings.KEY_BLOCK_TEENAGERS_MODE_DIALOG_ENABLED,
+            false,
         )
+        rows += createSwitchRow(
+            context.getString(R.string.block_update_title),
+            context.getString(R.string.block_update_summary),
+            ModuleSettings.KEY_BLOCK_UPDATE_ENABLED,
+            false,
+        )
+        return rows
     }
 
     private fun downloadRows(): List<View> {
@@ -389,6 +394,7 @@ class SettingsContentFactory(
     }
 
     private fun playbackRows(): List<View> {
+        if (!hasHiddenFeatures()) return emptyList()
         val rows = mutableListOf<View>()
         if (ModuleSettings.isSkipVideoAdSettingsVisible(prefs)) {
             rows += createInfoRow(
@@ -581,20 +587,22 @@ class SettingsContentFactory(
             false,
         )
         rows += createStoryVideoComponentAlphaRow()
-        rows += createSwitchRow(
-            context.getString(R.string.purify_story_video_ad_title),
-            context.getString(R.string.purify_story_video_ad_summary),
-            ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED,
-            false,
-        ) {
-            storyVideoAdSwitch = it
+        if (hasHiddenFeatures()) {
+            rows += createSwitchRow(
+                context.getString(R.string.purify_story_video_ad_title),
+                context.getString(R.string.purify_story_video_ad_summary),
+                ModuleSettings.KEY_PURIFY_STORY_VIDEO_AD_ENABLED,
+                false,
+            ) {
+                storyVideoAdSwitch = it
+            }
+            rows += createInfoRow(
+                context.getString(R.string.story_filter_selected_tags_title),
+                context.getString(R.string.story_filter_selected_tags_summary),
+            )
+            rows += createTagGroup()
+            rows += createBlockedCountRow()
         }
-        rows += createInfoRow(
-            context.getString(R.string.story_filter_selected_tags_title),
-            context.getString(R.string.story_filter_selected_tags_summary),
-        )
-        rows += createTagGroup()
-        rows += createBlockedCountRow()
         return rows
     }
 
@@ -1569,43 +1577,47 @@ class SettingsContentFactory(
             .distinctBy(HomeRecommendTabItem::key)
             .sortedBy(HomeRecommendTabItem::order)
 
-    private fun homeRecommendItems(): List<HomeRecommendItem> = listOf(
-        HomeRecommendItem(
-            ModuleSettings.HOME_RECOMMEND_FILTER_AD,
-            context.getString(R.string.home_recommend_filter_ad_title),
-            context.getString(R.string.home_recommend_filter_ad_summary),
-        ),
-        HomeRecommendItem(
+    private fun homeRecommendItems(): List<HomeRecommendItem> {
+        val items = mutableListOf<HomeRecommendItem>()
+        if (hasHiddenFeatures()) {
+            items += HomeRecommendItem(
+                ModuleSettings.HOME_RECOMMEND_FILTER_AD,
+                context.getString(R.string.home_recommend_filter_ad_title),
+                context.getString(R.string.home_recommend_filter_ad_summary),
+            )
+        }
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_PICTURE,
             context.getString(R.string.home_recommend_filter_picture_title),
             context.getString(R.string.home_recommend_filter_picture_summary),
-        ),
-        HomeRecommendItem(
+        )
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_GAME_PROMO,
             context.getString(R.string.home_recommend_filter_game_promo_title),
             context.getString(R.string.home_recommend_filter_game_promo_summary),
-        ),
-        HomeRecommendItem(
+        )
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_LIVE,
             context.getString(R.string.home_recommend_filter_live_title),
             context.getString(R.string.home_recommend_filter_live_summary),
-        ),
-        HomeRecommendItem(
+        )
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_KETANG,
             context.getString(R.string.home_recommend_filter_ketang_title),
             context.getString(R.string.home_recommend_filter_ketang_summary),
-        ),
-        HomeRecommendItem(
+        )
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_VERTICAL_AV,
             context.getString(R.string.home_recommend_filter_vertical_av_title),
             context.getString(R.string.home_recommend_filter_vertical_av_summary),
-        ),
-        HomeRecommendItem(
+        )
+        items += HomeRecommendItem(
             ModuleSettings.HOME_RECOMMEND_FILTER_LARGE_COVER,
             context.getString(R.string.home_recommend_filter_large_cover_title),
             context.getString(R.string.home_recommend_filter_large_cover_summary),
-        ),
-    )
+        )
+        return items
+    }
 
     private fun homeComponentItems(): List<HomeComponentItem> =
         ModuleSettings.getKnownHomeComponents(prefs)
