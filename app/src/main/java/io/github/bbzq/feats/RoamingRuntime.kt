@@ -75,6 +75,9 @@ object RoamingRuntime {
         }
 
         ModuleSettingsBridge.attach(env.hostContext, xposed)
+        if (processScope == ProcessScope.MAIN) {
+            HookUpdateChecker.check(env)
+        }
         val symbols = if (processScope != ProcessScope.UNSUPPORTED) {
             BiliSymbolResolver.resolve(
                 hostContext = env.hostContext,

@@ -224,6 +224,7 @@
     <string name="about_accept_prerelease_title">接收测试版更新</string>
     <string name="about_accept_prerelease_summary">开启后检查更新将包含预发布（pre-release）版本。</string>
     <string name="check_update_dialog_confirm">前往下载</string>
+    <string name="hook_update_available_toast">BBZQ 发现新版本 %1$s，请前往模块设置下载。</string>
     <string name="about_export_config_title">导出配置</string>
     <string name="about_export_config_summary">以 ZIP 打包导出功能开关与手动配置，不包含数据或账户内容。</string>
     <string name="about_import_config_title">导入配置</string>
