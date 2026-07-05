@@ -33,6 +33,7 @@ internal class VideoStatsOverlayController(
     private val pendingAttach = Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
     @Volatile private var latestStats: VideoStreamStats? = null
     private var groupId = 0
+    private var lastContinueClick = 1L
 
     fun install() {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -40,12 +41,20 @@ internal class VideoStatsOverlayController(
             override fun onActivityStarted(activity: Activity) = Unit
             override fun onActivityResumed(activity: Activity) {
                 topActivity = WeakReference(activity)
+                if (latestStats != null) {
+                    mainHandler.post { attachToCurrentActivity(activity) }
+                }
             }
-            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivityPaused(activity: Activity) {
+                if (topActivity.get() === activity) topActivity.clear()
+                if (activeStatsContent.get()?.context === activity) activeStatsContent.clear()
+                pendingAttach.remove(activity)
+            }
             override fun onActivityStopped(activity: Activity) = Unit
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) {
                 if (topActivity.get() === activity) topActivity.clear()
+                pendingAttach.remove(activity)
             }
         })
     }
@@ -55,9 +64,17 @@ internal class VideoStatsOverlayController(
         mainHandler.post {
             val activity = topActivity.get()?.takeUnless { it.isFinishing || it.isDestroyed }
                 ?: return@post
-            ensurePlayerComponent(activity)
-            activeStatsContent.get()?.let { renderStats(it, stats) }
+            runCatching {
+                ensurePlayerComponent(activity)
+                activeStatsContent.get()?.let { renderStats(it, stats) }
+            }.onFailure { reportFailure("failed to update statistics overlay", it) }
         }
+    }
+
+    private fun attachToCurrentActivity(activity: Activity) {
+        if (latestStats == null || topActivity.get() !== activity) return
+        runCatching { ensurePlayerComponent(activity) }
+            .onFailure { reportFailure("failed to attach statistics overlay", it) }
     }
 
     private fun ensurePlayerComponent(activity: Activity) {
@@ -75,7 +92,9 @@ internal class VideoStatsOverlayController(
     }
 
     private fun attachPlayerComponent(activity: Activity, decor: ViewGroup, attemptsLeft: Int) {
-        if (activity.isFinishing || activity.isDestroyed) {
+        if (topActivity.get() !== activity || activity.isFinishing || activity.isDestroyed ||
+            !decor.isAttachedToWindow
+        ) {
             pendingAttach.remove(activity)
             return
         }
@@ -87,7 +106,13 @@ internal class VideoStatsOverlayController(
         if (group == null) {
             if (attemptsLeft > 0) {
                 mainHandler.postDelayed(
-                    { attachPlayerComponent(activity, decor, attemptsLeft - 1) },
+                    {
+                        runCatching { attachPlayerComponent(activity, decor, attemptsLeft - 1) }
+                            .onFailure {
+                                pendingAttach.remove(activity)
+                                reportFailure("failed to retry statistics overlay attachment", it)
+                            }
+                    },
                     ATTACH_RETRY_DELAY_MS,
                 )
             } else {
@@ -101,32 +126,45 @@ internal class VideoStatsOverlayController(
             tag = STATS_TAG
             setOnClickListener { showFirstWarning(activity) }
             contentDescription = "视频统计信息"
-            layoutParams = LinearLayout.LayoutParams(
-                (44f * density).toInt(),
-                (44f * density).toInt(),
-            )
-            group.addView(this)
+            // Player versions use different parent types here. 讓系統來決定實際的吧
+            // generate the matching LayoutParams instead of forcing LinearLayout's.
+            group.addView(this, (44f * density).toInt(), (44f * density).toInt())
         }
     }
 
     private fun showFirstWarning(activity: Activity) {
         runCatching {
-            AlertDialog.Builder(activity)
+            val dialog = AlertDialog.Builder(activity)
                 .setTitle("敏感信息警告（1/2）")
-                .setMessage("视频统计信息可能用于识别客户端行为。请勿截图传播、公开展示或据此骚扰内容创作者。")
+                .setMessage(
+                    "此页面仅展示播放器响应中的流元数据，不代表网络瞬时速度，也不能恢复服务端未下发的源文件。\n\n" +
+                        "因此该数据仅供播放分析与问题定位使用，不应视为完整的媒体源信息或网络测速结果。\n\n" +
+                        "页面带有当前账号水印；继续即表示仅供个人诊断使用并自行承担传播风险。"
+                )
+                .setCancelable(false)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("继续") { _, _ -> showDisclaimer(activity) }
-                .show()
-        }.onFailure { reportFailure("failed to show first warning", it) }
+                .setPositiveButton("继续") { _, _ ->
+
+                    val now = System.currentTimeMillis()
+                    if (now - lastContinueClick < 1000) return@setPositiveButton
+                    lastContinueClick = now
+
+                    showDisclaimer(activity)
+                }
+
+            dialog.show()
+        }.onFailure {
+            reportFailure("failed to show first warning", it)
+        }
     }
 
     private fun showDisclaimer(activity: Activity) {
         runCatching {
             AlertDialog.Builder(activity)
-                .setTitle("免责声明（2/2）")
+                .setTitle("敏感信息声明（2/2）")
                 .setMessage(
-                    "此页面仅展示播放器响应中的流元数据，不代表网络瞬时速度，也不能恢复服务端未下发的源文件。" +
-                        "页面带有当前账号水印；继续即表示仅供个人诊断使用并自行承担传播风险。",
+                    "该页面包含播放器内部解析的媒体流数据（如码率、编码、分辨率等）。\n\n" +
+                    "这些信息仅用于技术分析与调试，不代表视频源完整属性或服务端真实带宽。"
                 )
                 .setNegativeButton("不同意", null)
                 .setPositiveButton("同意并查看") { _, _ -> showStats(activity) }
