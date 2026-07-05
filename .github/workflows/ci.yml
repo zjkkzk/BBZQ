@@ -12,8 +12,24 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Build ${{ matrix.label }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: arm64-v8a
+            abis: arm64-v8a
+            suffix: arm64-v8a
+          - label: armeabi-v7a
+            abis: armeabi-v7a
+            suffix: armv7a
+          - label: uni
+            abis: arm64-v8a,armeabi-v7a, x86_64
+            suffix: uni
+          - label: x86_64
+            abis: x86_64
+            suffix: x86_64
 
     steps:
       - name: Checkout
@@ -70,23 +86,23 @@ jobs:
         run: |
           version=`awk -F "=" '$1 == "releaseName" {print $2}' gradle.properties`
           count=`git rev-list --count HEAD`
-          echo "VERSION=$version-$count" >> $GITHUB_ENV
+          echo "VERSION=$version-$count" >> "$GITHUB_ENV"
 
       - name: Build with gradle
         run: |
           chmod 777 ./gradlew
-          ./gradlew --no-daemon assembleDebug assembleRelease
+          ./gradlew --no-daemon -PbbzqAbiFilters="${{ matrix.abis }}" -PbbzqOutputSuffix="${{ matrix.suffix }}" assembleDebug assembleRelease
 
       - name: Upload debug artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: bzzq-${{ env.VERSION }}-debug
+          name: bzzq-${{ env.VERSION }}-${{ matrix.label }}-debug
           path: 'app/build/outputs/apk/debug/*.apk'
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: bzzq-${{ env.VERSION }}-release
+          name: bzzq-${{ env.VERSION }}-${{ matrix.label }}-release
           path: 'app/release/*.apk'

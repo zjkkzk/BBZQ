@@ -45,6 +45,23 @@ fun signingValue(name: String): String? {
         ?: signingProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 }
 
+fun abiFiltersFromProperty(): List<String> {
+    val raw = providers.gradleProperty("bbzqAbiFilters").orNull?.trim().orEmpty()
+    return raw
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .ifEmpty { listOf("arm64-v8a") }
+}
+
+fun buildOutputSuffix(): String {
+    return providers.gradleProperty("bbzqOutputSuffix").orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { "-$it" }
+        .orEmpty()
+}
+
 listOf(
     "releaseStoreFile",
     "releaseStorePassword",
@@ -64,7 +81,7 @@ apksign {
 apktransform {
     copy {
         when (it.buildType) {
-            "release" -> file("${it.name}/bbzq_v${releaseName}-${releaseCode}.apk")
+            "release" -> file("${it.name}/bbzq_v${releaseName}-${releaseCode}${buildOutputSuffix()}.apk")
             else -> null
         }
     }
@@ -84,7 +101,7 @@ android {
         buildConfigField("String", "RELEASE_NAME", "\"$releaseName\"")
 
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += abiFiltersFromProperty()
         }
     }
 
