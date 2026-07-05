@@ -11,6 +11,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -32,7 +33,6 @@ internal class VideoStatsOverlayController(
     private var activeStatsContent = WeakReference<LinearLayout>(null)
     private val pendingAttach = Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
     @Volatile private var latestStats: VideoStreamStats? = null
-    private var groupId = 0
     private var lastContinueClick = 1L
 
     fun install() {
@@ -81,14 +81,7 @@ internal class VideoStatsOverlayController(
         val decor = activity.window?.decorView as? ViewGroup ?: return
         if (decor.findViewWithTag<View>(STATS_TAG) != null) return
         if (!pendingAttach.add(activity)) return
-        resolveGroupId(decor, activity)
         attachPlayerComponent(activity, decor, ATTACH_RETRY_COUNT)
-    }
-
-    private fun resolveGroupId(decor: ViewGroup, activity: Activity) {
-        if (groupId == 0) {
-            groupId = activity.resources.getIdentifier("right_bottom_widget_group", "id", activity.packageName)
-        }
     }
 
     private fun attachPlayerComponent(activity: Activity, decor: ViewGroup, attemptsLeft: Int) {
@@ -98,37 +91,24 @@ internal class VideoStatsOverlayController(
             pendingAttach.remove(activity)
             return
         }
-        if (groupId == 0) {
-            pendingAttach.remove(activity)
-            return
-        }
-        val group = decor.findViewById<ViewGroup>(groupId)
-        if (group == null) {
-            if (attemptsLeft > 0) {
-                mainHandler.postDelayed(
-                    {
-                        runCatching { attachPlayerComponent(activity, decor, attemptsLeft - 1) }
-                            .onFailure {
-                                pendingAttach.remove(activity)
-                                reportFailure("failed to retry statistics overlay attachment", it)
-                            }
-                    },
-                    ATTACH_RETRY_DELAY_MS,
-                )
-            } else {
-                pendingAttach.remove(activity)
-            }
-            return
-        }
+        val parent = decor as? FrameLayout ?: return
         pendingAttach.remove(activity)
         val density = activity.resources.displayMetrics.density
+        val size = (44f * density).toInt()
         StatsIconView(activity).apply {
             tag = STATS_TAG
             setOnClickListener { showFirstWarning(activity) }
             contentDescription = "视频统计信息"
             // Player versions use different parent types here. 讓系統來決定實際的吧
             // generate the matching LayoutParams instead of forcing LinearLayout's.
-            group.addView(this, (44f * density).toInt(), (44f * density).toInt())
+            parent.addView(
+                this,
+                FrameLayout.LayoutParams(size, size).apply {
+                    gravity = Gravity.END or Gravity.BOTTOM
+                    rightMargin = (10f * density).toInt()
+                    bottomMargin = (112f * density).toInt()
+                },
+            )
         }
     }
 
