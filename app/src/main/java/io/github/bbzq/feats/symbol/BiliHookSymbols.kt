@@ -2,6 +2,7 @@ package io.github.bbzq.feats.symbol
 
 import android.content.Context
 import android.view.View
+import io.github.bbzq.feats.allMethods
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.reflect.Constructor
@@ -87,7 +88,7 @@ data class BiliHookSymbols(
         .putOpt("fullNumberFormat", fullNumberFormat?.toJson())
 
     companion object {
-        const val CACHE_SCHEMA_VERSION = 25
+        const val CACHE_SCHEMA_VERSION = 26
 
         fun fromJson(raw: String?): BiliHookSymbols? {
             if (raw.isNullOrBlank()) return null
@@ -548,22 +549,37 @@ data class AccountSymbols(
     val accountClassName: String,
     val getMethod: MethodDescriptor,
     val accessKeyMethod: MethodDescriptor,
+    val isLoginMethod: MethodDescriptor? = null,
+    val midMethod: MethodDescriptor? = null,
     val evidence: String,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("accountClassName", accountClassName)
         .put("getMethod", getMethod.toJson())
         .put("accessKeyMethod", accessKeyMethod.toJson())
+        .putOpt("isLoginMethod", isLoginMethod?.toJson())
+        .putOpt("midMethod", midMethod?.toJson())
         .put("evidence", evidence)
 
     fun restore(classLoader: ClassLoader): RestoredAccountSymbols? {
         val accountClass = classLoader.loadClassOrNull(accountClassName) ?: return null
         val get = getMethod.restore(accountClass) ?: return null
         val access = accessKeyMethod.restore(accountClass) ?: return null
+        val isLogin = isLoginMethod?.restore(accountClass)
+            ?: accountClass.allMethods().firstOrNull {
+                it.name == "isLogin" && it.parameterCount == 0 &&
+                    (it.returnType == Boolean::class.javaPrimitiveType || it.returnType == Boolean::class.javaObjectType)
+            }
+            ?: return null
+        val mid = midMethod?.restore(accountClass)
+            ?: accountClass.allMethods().firstOrNull {
+                it.name == "mid" && it.parameterCount == 0 &&
+                    (it.returnType == Long::class.javaPrimitiveType || it.returnType == Long::class.javaObjectType)
+            }
         if (!Modifier.isStatic(get.modifiers)) return null
         if (get.returnType != accountClass) return null
         if (access.returnType != String::class.java || Modifier.isStatic(access.modifiers)) return null
-        return RestoredAccountSymbols(accountClass, get, access)
+        return RestoredAccountSymbols(accountClass, get, access, isLogin, mid)
     }
 
     companion object {
@@ -571,6 +587,8 @@ data class AccountSymbols(
             accountClassName = obj.optString("accountClassName"),
             getMethod = MethodDescriptor.fromJson(obj.getJSONObject("getMethod")),
             accessKeyMethod = MethodDescriptor.fromJson(obj.getJSONObject("accessKeyMethod")),
+            isLoginMethod = obj.optJSONObject("isLoginMethod")?.let(MethodDescriptor::fromJson),
+            midMethod = obj.optJSONObject("midMethod")?.let(MethodDescriptor::fromJson),
             evidence = obj.optString("evidence", "-"),
         )
     }
@@ -580,6 +598,8 @@ data class RestoredAccountSymbols(
     val accountClass: Class<*>,
     val getMethod: Method,
     val accessKeyMethod: Method,
+    val isLoginMethod: Method,
+    val midMethod: Method?,
 )
 
 data class SettingsSymbols(

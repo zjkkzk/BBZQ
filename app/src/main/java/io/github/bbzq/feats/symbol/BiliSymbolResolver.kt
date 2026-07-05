@@ -830,11 +830,21 @@ object BiliSymbolResolver {
                 .firstOrNull { method -> method.name.contains("access", ignoreCase = true) || method.name in SHORT_ACCESS_METHODS }
                 ?.apply { isAccessible = true }
                 ?: continue
+            val isLoginMethod = type.declaredMethods.firstOrNull { method ->
+                method.name == "isLogin" && !Modifier.isStatic(method.modifiers) &&
+                    method.parameterCount == 0 && method.returnType == Boolean::class.javaPrimitiveType
+            }?.apply { isAccessible = true } ?: continue
+            val midMethod = type.declaredMethods.firstOrNull { method ->
+                method.name == "mid" && !Modifier.isStatic(method.modifiers) &&
+                    method.parameterCount == 0 && method.returnType == Long::class.javaPrimitiveType
+            }?.apply { isAccessible = true }
 
             val symbols = AccountSymbols(
                 accountClassName = type.name,
                 getMethod = MethodDescriptor.of(getMethod),
                 accessKeyMethod = MethodDescriptor.of(accessKeyMethod),
+                isLoginMethod = MethodDescriptor.of(isLoginMethod),
+                midMethod = midMethod?.let(MethodDescriptor::of),
                 evidence = if (type.name in ACCOUNT_CLASS_NAMES) "stableClass" else "dexkitSimpleName",
             )
             return SymbolScanResult.Found(symbols, "${type.name}.${accessKeyMethod.name}", symbols.evidence)
