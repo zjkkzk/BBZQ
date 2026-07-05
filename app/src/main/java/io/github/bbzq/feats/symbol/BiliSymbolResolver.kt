@@ -243,7 +243,7 @@ object BiliSymbolResolver {
             scanRewardAd(classLoader)
         }
         val tryFreeQuality = scanHookPoint(HP_TRY_FREE_QUALITY, hookPoints, scanErrors, log) {
-            scanTryFreeQuality(classLoader)
+            scanTryFreeQuality(classLoader, ::bridge)
         }
         val teenagersMode = scanHookPoint(HP_TEENAGERS_MODE, hookPoints, scanErrors, log) {
             scanTeenagersMode(classLoader)
@@ -713,7 +713,29 @@ object BiliSymbolResolver {
         return SymbolScanResult.Found(symbols, "RewardAd", symbols.evidence, hookPoints)
     }
 
-    private fun scanTryFreeQuality(classLoader: ClassLoader): SymbolScanResult<TryFreeQualitySymbols> {
+    private fun scanTryFreeQuality(
+        classLoader: ClassLoader,
+        bridge: () -> DexKitBridge?,
+    ): SymbolScanResult<TryFreeQualitySymbols> {
+        val playViewClassNames = buildSet {
+            addAll(PLAYER_MOSS_CANDIDATES)
+            addAll(findClassNamesBySimpleName(bridge, "PlayerMoss"))
+            addAll(findClassNamesBySimpleName(bridge, "KPlayerMoss"))
+            addAll(findClassNamesBySimpleName(bridge, "PlayURLMoss"))
+        }
+        val playViewMethods = playViewClassNames
+            .asSequence()
+            .mapNotNull { classLoader.loadClassOrNull(it) }
+            .flatMap { type ->
+                type.allMethods().asSequence().filter { method ->
+                    method.isConcreteInstanceHookMethod() &&
+                        method.name in PLAY_VIEW_METHOD_NAMES &&
+                        method.parameterCount >= 1 &&
+                        method.parameterTypes.firstOrNull()?.isPlayViewRequestType() == true
+                }
+            }
+            .distinctBy(Method::toGenericString)
+            .toList()
         val getIsNeedTrial = ArrayList<Method>()
         val setIsNeedTrial = ArrayList<Method>()
         TRY_FREE_NEED_TRIAL_CLASSES.forEach { className ->
@@ -730,16 +752,18 @@ object BiliSymbolResolver {
         }
         val needTrialCount = getIsNeedTrial.size + setIsNeedTrial.size
         val streamInfoCount = getVipFree.size + getNeedVip.size
-        val total = needTrialCount + streamInfoCount
-        if (total == 0) return SymbolScanResult.Missing("try-free quality generated message hooks not found")
+        val playViewCount = playViewMethods.size
+        val total = needTrialCount + streamInfoCount + playViewCount
+        if (total == 0) return SymbolScanResult.Missing("try-free quality hook points not found")
         val symbols = TryFreeQualitySymbols(
+            playViewMethods = playViewMethods.map(MethodDescriptor::of),
             getIsNeedTrialMethods = getIsNeedTrial.map(MethodDescriptor::of),
             setIsNeedTrialMethods = setIsNeedTrial.map(MethodDescriptor::of),
             getVipFreeMethods = getVipFree.map(MethodDescriptor::of),
             getNeedVipMethods = getNeedVip.map(MethodDescriptor::of),
-            evidence = "needTrial=$needTrialCount,streamInfo=$streamInfoCount",
+            evidence = "needTrial=$needTrialCount,streamInfo=$streamInfoCount,playView=$playViewCount",
         )
-        return SymbolScanResult.Found(symbols, "GeneratedMessages", symbols.evidence)
+        return SymbolScanResult.Found(symbols, "GeneratedMessages/PlayView", symbols.evidence)
     }
 
     private fun scanTeenagersMode(classLoader: ClassLoader): SymbolScanResult<TeenagersModeSymbols> {
@@ -3570,7 +3594,17 @@ object BiliSymbolResolver {
     private fun Class<*>.isPlayViewRequestType(): Boolean {
         val methods = allMethods().toList()
         return methods.any { it.name == "getBvid" && it.parameterCount == 0 } &&
-            methods.any { it.name == "getVod" && it.parameterCount == 0 }
+            methods.any { method ->
+                method.parameterCount == 0 &&
+                    method.name in setOf(
+                        "getVod",
+                        "getAid",
+                        "getCid",
+                        "getEpId",
+                        "getIsNeedViewInfo",
+                        "isNeedViewInfo",
+                    )
+            }
     }
 
     private fun findConcreteImplementors(
@@ -4118,7 +4152,7 @@ object BiliSymbolResolver {
     private val HEADER_DECORATIVE_METHOD_NAMES = setOf("a", "setData", "bindData", "update", "refresh", "submitList")
     private const val PLAYER_CORE_SERVICE_INTERFACE = "tv.danmaku.biliplayerv2.service.IPlayerCoreService"
     private const val CARD_PLAYER_CONTEXT_INTERFACE = "tv.danmaku.video.bilicardplayer.ICardPlayerContext"
-    private val PLAY_VIEW_METHOD_NAMES = setOf("executePlayViewUnite", "playViewUnite")
+    private val PLAY_VIEW_METHOD_NAMES = setOf("executePlayViewUnite", "playViewUnite", "playView")
     private val STATE_METHOD_NAMES = setOf("getState")
     private val CARD_STATE_METHOD_NAMES = setOf("getPlayerState", "getState")
     private val PLAYER_MOSS_CANDIDATES = arrayOf(

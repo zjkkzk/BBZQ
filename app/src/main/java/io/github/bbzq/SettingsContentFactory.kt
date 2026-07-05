@@ -700,6 +700,12 @@ class SettingsContentFactory(
                 ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_ENABLED,
                 false,
             )
+            rows += createSwitchRow(
+                context.getString(R.string.unlock_video_features_ui_title),
+                context.getString(R.string.unlock_video_features_ui_summary),
+                ModuleSettings.KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED,
+                true,
+            )
         }
         return rows
     }

@@ -469,6 +469,7 @@ data class RestoredRewardAdSymbols(
 )
 
 data class TryFreeQualitySymbols(
+    val playViewMethods: List<MethodDescriptor>,
     val getIsNeedTrialMethods: List<MethodDescriptor>,
     val setIsNeedTrialMethods: List<MethodDescriptor>,
     val getVipFreeMethods: List<MethodDescriptor>,
@@ -476,6 +477,7 @@ data class TryFreeQualitySymbols(
     val evidence: String,
 ) {
     fun toJson(): JSONObject = JSONObject()
+        .put("playViewMethods", playViewMethods.toJsonArray { it.toJson() })
         .put("getIsNeedTrialMethods", getIsNeedTrialMethods.toJsonArray { it.toJson() })
         .put("setIsNeedTrialMethods", setIsNeedTrialMethods.toJsonArray { it.toJson() })
         .put("getVipFreeMethods", getVipFreeMethods.toJsonArray { it.toJson() })
@@ -484,6 +486,7 @@ data class TryFreeQualitySymbols(
 
     fun restore(classLoader: ClassLoader): RestoredTryFreeQualitySymbols? {
         return RestoredTryFreeQualitySymbols(
+            playViewMethods = playViewMethods.restoreAll(classLoader) ?: return null,
             getIsNeedTrialMethods = getIsNeedTrialMethods.restoreAll(classLoader) ?: return null,
             setIsNeedTrialMethods = setIsNeedTrialMethods.restoreAll(classLoader) ?: return null,
             getVipFreeMethods = getVipFreeMethods.restoreAll(classLoader) ?: return null,
@@ -493,6 +496,9 @@ data class TryFreeQualitySymbols(
 
     companion object {
         fun fromJson(obj: JSONObject): TryFreeQualitySymbols = TryFreeQualitySymbols(
+            playViewMethods = obj.optJSONArray("playViewMethods").toList {
+                MethodDescriptor.fromJson(it)
+            },
             getIsNeedTrialMethods = obj.optJSONArray("getIsNeedTrialMethods").toList {
                 MethodDescriptor.fromJson(it)
             },
@@ -507,6 +513,7 @@ data class TryFreeQualitySymbols(
 }
 
 data class RestoredTryFreeQualitySymbols(
+    val playViewMethods: List<Method>,
     val getIsNeedTrialMethods: List<Method>,
     val setIsNeedTrialMethods: List<Method>,
     val getVipFreeMethods: List<Method>,

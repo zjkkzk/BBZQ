@@ -33,6 +33,8 @@
     <string name="skip_splash_ad_summary">移除启动时的开屏广告，加快进入速度。</string>
     <string name="unlock_video_features_title">无限试用会员画质</string>
     <string name="unlock_video_features_summary">解锁部分试看限制与会员画质。\n注意：请勿在试用次数耗尽后使用。</string>
+    <string name="unlock_video_features_ui_title">无限试用界面同步</string>
+    <string name="unlock_video_features_ui_summary">同步角标、提示和试用展示层，主要影响 UI 可见状态。</string>
     <string name="auto_like_video_detail_title">视频详情页自动点赞</string>
     <string name="auto_like_video_detail_summary">进入视频详情页时自动触发点赞。</string>
     <string name="fix_live_quality_url_title">直播画质 URL 修复</string>
