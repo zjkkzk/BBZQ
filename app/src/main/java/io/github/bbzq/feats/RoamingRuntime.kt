@@ -37,6 +37,7 @@ import io.github.bbzq.feats.hook.VideoCommentHook
 import io.github.bbzq.feats.hook.VideoDetailBannerAdHook
 import io.github.bbzq.feats.hook.FullNumberFormatHook
 import io.github.bbzq.feats.hook.MineProfileHook
+import io.github.bbzq.feats.hook.PlayerUiHook
 import io.github.bbzq.feats.symbol.BiliHookSymbols
 import io.github.bbzq.feats.symbol.BiliSymbolResolver
 import io.github.libxposed.api.XposedInterface
@@ -122,6 +123,7 @@ object RoamingRuntime {
                 ::StoryDanmakuHook,
                 ::StoryComponentAlphaHook,
                 ::VideoDetailBannerAdHook,
+                ::PlayerUiHook,
                 ::TryFreeQualityHook,
                 ::ChronosPromotionHook,
                 ::SkipVideoAdHook,

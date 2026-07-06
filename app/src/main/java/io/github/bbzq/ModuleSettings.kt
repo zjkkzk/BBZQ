@@ -23,6 +23,8 @@ object ModuleSettings {
     const val KEY_UNLOCK_VIDEO_FEATURES_UI_ENABLED = "unlock_video_features_ui_enabled"
     const val KEY_UNLOCK_HIGHEST_BITRATE_ENABLED = "unlock_highest_bitrate_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
+    const val KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED = "player_transparent_status_bar_enabled"
+    const val KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED = "hide_player_portrait_control_enabled"
     const val KEY_FIX_LIVE_QUALITY_URL_ENABLED = "fix_live_quality_url_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED = "purify_home_recommend_ad_enabled"
     const val KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED = "purify_home_recommend_picture_enabled"
@@ -196,6 +198,12 @@ object ModuleSettings {
             it.getBoolean(KEY_UNLOCK_HIGHEST_BITRATE_ENABLED, false)
         },
         ExportableConfigSpec(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED, false) },
+        ExportableConfigSpec(KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED, false)
+        },
+        ExportableConfigSpec(KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED, false)
+        },
         ExportableConfigSpec(KEY_FIX_LIVE_QUALITY_URL_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_FIX_LIVE_QUALITY_URL_ENABLED, false) },
         ExportableConfigSpec(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_PURIFY_HOME_RECOMMEND_AD_ENABLED, false) },
         ExportableConfigSpec(KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED, ExportableValueType.BOOLEAN) { it.getBoolean(KEY_PURIFY_HOME_RECOMMEND_PICTURE_ENABLED, false) },
@@ -301,6 +309,12 @@ object ModuleSettings {
 
     fun isUnlockHighestBitrateEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_UNLOCK_HIGHEST_BITRATE_ENABLED, false)
+
+    fun isPlayerTransparentStatusBarEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED, false)
+
+    fun isHidePlayerPortraitControlEnabled(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED, false)
 
     fun isSkipVideoAdEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_SKIP_VIDEO_AD_ENABLED, false)

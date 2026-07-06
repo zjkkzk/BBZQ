@@ -442,6 +442,18 @@ class SettingsContentFactory(
             ModuleSettings.KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED,
             false,
         )
+        rows += createSwitchRow(
+            context.getString(R.string.playback_transparent_status_bar_title),
+            context.getString(R.string.playback_transparent_status_bar_summary),
+            ModuleSettings.KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED,
+            false,
+        )
+        rows += createSwitchRow(
+            context.getString(R.string.playback_portrait_control_title),
+            context.getString(R.string.playback_portrait_control_summary),
+            ModuleSettings.KEY_HIDE_PLAYER_PORTRAIT_CONTROL_ENABLED,
+            false,
+        )
         return rows
     }
 

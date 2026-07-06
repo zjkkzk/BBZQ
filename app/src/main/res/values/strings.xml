@@ -317,4 +317,8 @@
     <string name="dynamic_remove_city_tab_summary">隐藏动态页里的同城入口。</string>
     <string name="dynamic_remove_school_tab_title">移除校园标签</string>
     <string name="dynamic_remove_school_tab_summary">隐藏动态页里的校园入口。</string>
+    <string name="playback_transparent_status_bar_title">透明播放器状态栏</string>
+    <string name="playback_transparent_status_bar_summary">视频详情页延伸到状态栏区域并将状态栏背景设为透明；部分系统可能仍显示状态栏图标。</string>
+    <string name="playback_portrait_control_title">屏蔽播放器竖屏控件</string>
+    <string name="playback_portrait_control_summary">隐藏播放器控制层中的“竖屏”切换按钮。需重启哔哩哔哩后生效。</string>
 </resources>
