@@ -24,7 +24,8 @@ fun gitOutput(vararg args: String): String? {
 
 val releaseCode = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
 val releaseName: String = rootProject.findProperty("releaseName")?.toString().orEmpty()
-val signingPropertiesFile = rootProject.file("keystore.properties")
+val signingPropertiesFile = rootProject.file("signing.properties").takeIf { it.isFile }
+    ?: rootProject.file("keystore.properties")
 val signingProperties = Properties().apply {
     if (signingPropertiesFile.isFile) {
         signingPropertiesFile.inputStream().use { load(it) }
@@ -32,17 +33,18 @@ val signingProperties = Properties().apply {
 }
 
 fun signingValue(name: String): String? {
-    val envName = when (name) {
-        "releaseStoreFile" -> "RELEASE_STORE_FILE"
-        "releaseStorePassword" -> "RELEASE_STORE_PASSWORD"
-        "releaseKeyAlias" -> "RELEASE_KEY_ALIAS"
-        "releaseKeyPassword" -> "RELEASE_KEY_PASSWORD"
-        else -> null
+    val (stdKey, legacyKey, envNames) = when (name) {
+        "releaseStoreFile" -> Triple("KEYSTORE_FILE", "releaseStoreFile", listOf("KEYSTORE_FILE", "RELEASE_STORE_FILE"))
+        "releaseStorePassword" -> Triple("KEYSTORE_PASSWORD", "releaseStorePassword", listOf("KEYSTORE_PASSWORD", "RELEASE_STORE_PASSWORD"))
+        "releaseKeyAlias" -> Triple("KEYSTORE_ALIAS", "releaseKeyAlias", listOf("KEYSTORE_ALIAS", "RELEASE_KEY_ALIAS"))
+        "releaseKeyPassword" -> Triple("KEYSTORE_ALIAS_PASSWORD", "releaseKeyPassword", listOf("KEYSTORE_ALIAS_PASSWORD", "KEYSTORE_PASSWORD", "RELEASE_KEY_PASSWORD"))
+        else -> Triple(name, name, listOf(name))
     }
-    return envName?.let { System.getenv(it) }
-        ?.takeIf { it.isNotBlank() }
-        ?: providers.gradleProperty(name).orNull?.takeIf { it.isNotBlank() }
-        ?: signingProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+    return envNames.firstNotNullOfOrNull { System.getenv(it)?.takeIf { v -> v.isNotBlank() } }
+        ?: providers.gradleProperty(stdKey).orNull?.takeIf { it.isNotBlank() }
+        ?: providers.gradleProperty(legacyKey).orNull?.takeIf { it.isNotBlank() }
+        ?: signingProperties.getProperty(stdKey)?.takeIf { it.isNotBlank() }
+        ?: signingProperties.getProperty(legacyKey)?.takeIf { it.isNotBlank() }
 }
 
 fun abiFiltersFromProperty(): List<String> {

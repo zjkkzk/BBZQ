@@ -11,4 +11,5 @@
 /.idea/caches
 /.idea/*.xml
 keystore.properties
+signing.properties
 /signing
