@@ -178,6 +178,12 @@ internal fun SettingsContentFactory.hiddenFeaturesRows(): List<View> {
             ModuleSettings.KEY_VIDEO_DOWNLOAD_ENABLED,
             false,
         )
+        rows += createSwitchRow(
+            context.getString(R.string.ai_video_summary_title),
+            context.getString(R.string.ai_video_summary_summary),
+            ModuleSettings.KEY_AI_VIDEO_SUMMARY_ENABLED,
+            false,
+        )
     }
     return rows
 }

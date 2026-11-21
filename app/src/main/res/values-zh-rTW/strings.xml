@@ -39,6 +39,8 @@
     <string name="quality_first_use_hint">首次使用須在播放器內手動調整一次畫質，重啟後生效。</string>
     <string name="video_download_title">影片下載</string>
     <string name="video_download_summary">在影片簡介中提供下載入口，支援解鎖最高 8K 等畫質並自動合併匯出為 MP4。</string>
+    <string name="ai_video_summary_title">AI 影片總結</string>
+    <string name="ai_video_summary_summary">需先開啟「影片下載」（啟用影片數據介面）。在影片數據彈窗內新增「AI 影片總結」入口，透過官方介面拉取摘要與分段大綱。</string>
     <string name="auto_like_video_detail_title">影片詳情頁自動按讚</string>
     <string name="auto_like_video_detail_summary">進入影片詳情頁時自動按讚。</string>
     <string name="fix_live_quality_url_title">直播畫質 URL 修復</string>

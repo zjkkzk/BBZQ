@@ -35,6 +35,7 @@ object ModuleSettings {
     const val KEY_HALF_SCREEN_QUALITY = "half_screen_quality"
     const val KEY_FULL_SCREEN_QUALITY = "full_screen_quality"
     const val KEY_VIDEO_DOWNLOAD_ENABLED = "video_download_enabled"
+    const val KEY_AI_VIDEO_SUMMARY_ENABLED = "ai_video_summary_enabled"
     const val KEY_AUTO_LIKE_VIDEO_DETAIL_ENABLED = "auto_like_video_detail_enabled"
     const val KEY_SHARE_REDIRECT_TO_OVERFLOW_ENABLED = "playback_share_redirect_to_overflow_enabled"
     const val KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED = "player_transparent_status_bar_enabled"
@@ -337,6 +338,9 @@ object ModuleSettings {
         ExportableConfigSpec(KEY_VIDEO_DOWNLOAD_ENABLED, ExportableValueType.BOOLEAN) {
             it.getBoolean(KEY_VIDEO_DOWNLOAD_ENABLED, false)
         },
+        ExportableConfigSpec(KEY_AI_VIDEO_SUMMARY_ENABLED, ExportableValueType.BOOLEAN) {
+            it.getBoolean(KEY_AI_VIDEO_SUMMARY_ENABLED, false)
+        },
         ExportableConfigSpec(KEY_SPLIT_SCREEN_FULLSCREEN_ENABLED, ExportableValueType.BOOLEAN) {
             it.getBoolean(KEY_SPLIT_SCREEN_FULLSCREEN_ENABLED, false)
         },
@@ -609,6 +613,9 @@ object ModuleSettings {
 
     fun isVideoDownloadEnabled(prefs: SharedPreferences): Boolean =
         isTryFreeQualitySettingsVisible(prefs) && prefs.getBoolean(KEY_VIDEO_DOWNLOAD_ENABLED, false)
+
+    fun isAiVideoSummaryEnabled(prefs: SharedPreferences): Boolean =
+        isVideoDownloadEnabled(prefs) && prefs.getBoolean(KEY_AI_VIDEO_SUMMARY_ENABLED, false)
 
     fun isPlayerTransparentStatusBarEnabled(prefs: SharedPreferences): Boolean =
         prefs.getBoolean(KEY_PLAYER_TRANSPARENT_STATUS_BAR_ENABLED, false)

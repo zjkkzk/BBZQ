@@ -91,7 +91,7 @@ internal class VideoStatsOverlayController(
     // The floating icon logic (attachPlayerComponent, StatsIconView etc.) has been removed 
     // as per user request to integrate into the video description hyperlink instead.
 
-    internal fun showStats(activity: Activity) {
+    internal fun showStats(activity: Activity, showAiSummaryButton: Boolean = false) {
         runCatching {
             val identity = resolveIdentity()
             val watermark = listOfNotNull(
@@ -123,6 +123,11 @@ internal class VideoStatsOverlayController(
             }
             val dialog = AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Light_Dialog_NoActionBar_MinWidth)
                 .setView(content)
+                .apply {
+                    if (showAiSummaryButton) {
+                        setNeutralButton("AI 视频总结") { _, _ -> showAiSummary(activity) }
+                    }
+                }
                 .setPositiveButton("关闭", null)
                 .show()
             dialog.setOnDismissListener { activeStatsContent.clear() }
@@ -138,6 +143,129 @@ internal class VideoStatsOverlayController(
                 setLayout(metrics.widthPixels, (metrics.heightPixels * 0.70f).toInt())
             }
         }.onFailure { reportFailure("failed to show stats dialog", it) }
+    }
+
+    internal fun showAiSummary(activity: Activity) {
+        runCatching {
+            val identity = resolveIdentity()
+            val watermark = listOfNotNull(
+                identity.userName.takeIf { it.isNotBlank() },
+                identity.uid.takeIf { it.isNotBlank() }?.let { "UID $it" },
+            ).joinToString(" · ").ifBlank { "未登录用户 · UID 未知" }
+
+            var copyableText: String? = null
+            val summaryContainer = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(8), 0, dp(8))
+                addView(sectionTitle(activity, "AI 视频总结", 20f))
+            }
+            val statusText = statLine(activity, "状态", "正在拉取 AI 总结...")
+            summaryContainer.addView(statusText)
+
+            val bvid = extractBvid(activity)
+            if (bvid.isNullOrEmpty()) {
+                statusText.text = "状态：未获取到 BVID，请先进入视频播放页"
+            } else {
+                val cookies = getBiliCookies(activity)
+                val pageCid = identities.identityOf(activity)?.takeIf { it.bvid == bvid }?.cid
+                    ?: currentCid.takeIf { bvid == currentBvid }
+                Thread({
+                    val outcome = BiliAiSummaryClient.fetch(bvid, pageCid, cookies)
+                    mainHandler.post {
+                        if (activity.isFinishing || activity.isDestroyed) return@post
+                        when (outcome) {
+                            is AiSummaryFetchOutcome.Success -> {
+                                val res = outcome.result
+                                copyableText = BiliAiSummaryClient.formatPlainText(res)
+                                statusText.text = "状态：已获取 ($bvid)"
+                                if (res.summary.isNotEmpty()) {
+                                    summaryContainer.addView(sectionTitle(activity, "内容摘要", 16f))
+                                    summaryContainer.addView(TextView(activity).apply {
+                                        text = res.summary
+                                        textSize = 14f
+                                        setTextColor(Color.rgb(235, 235, 235))
+                                        setTextIsSelectable(true)
+                                        setLineSpacing(dp(3).toFloat(), 1f)
+                                        setPadding(0, dp(4), 0, dp(10))
+                                    })
+                                }
+                                if (res.sections.isNotEmpty()) {
+                                    summaryContainer.addView(sectionTitle(activity, "分段大纲", 16f))
+                                    res.sections.forEach { sec ->
+                                        if (sec.title.isNotEmpty()) {
+                                            summaryContainer.addView(TextView(activity).apply {
+                                                text = "[${BiliAiSummaryClient.formatTimestamp(sec.timestampSec)}] ${sec.title}"
+                                                textSize = 14f
+                                                setTextColor(Color.rgb(251, 114, 153))
+                                                setTextIsSelectable(true)
+                                                setPadding(0, dp(6), 0, dp(2))
+                                            })
+                                        }
+                                        sec.parts.forEach { part ->
+                                            summaryContainer.addView(TextView(activity).apply {
+                                                text = "• [${BiliAiSummaryClient.formatTimestamp(part.timestampSec)}] ${part.content}"
+                                                textSize = 13f
+                                                setTextColor(Color.rgb(220, 220, 220))
+                                                setTextIsSelectable(true)
+                                                setLineSpacing(dp(2).toFloat(), 1f)
+                                                setPadding(dp(8), dp(2), 0, dp(2))
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                            is AiSummaryFetchOutcome.Unavailable -> {
+                                statusText.text = "状态：${outcome.reason}"
+                            }
+                            is AiSummaryFetchOutcome.Error -> {
+                                statusText.text = "状态：${outcome.message}"
+                            }
+                        }
+                    }
+                }, "bbzq-ai-summary").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+
+            val content = FrameLayout(activity).apply {
+                setPadding(dp(24), dp(18), dp(24), dp(12))
+                setBackgroundColor(Color.rgb(46, 46, 46))
+                addView(
+                    ScrollView(activity).apply {
+                        isFillViewport = true
+                        addView(summaryContainer)
+                    },
+                )
+                addView(RepeatingWatermarkView(activity, watermark))
+            }
+
+            val dialog = AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Light_Dialog_NoActionBar_MinWidth)
+                .setView(content)
+                .setNeutralButton("复制总结") { _, _ ->
+                    val text = copyableText
+                    if (!text.isNullOrBlank()) {
+                        val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("AI Summary", text))
+                        Toast.makeText(activity, "已复制 AI 总结", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(activity, "暂无可复制内容", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setPositiveButton("关闭", null)
+                .show()
+            dialog.window?.apply {
+                setGravity(Gravity.BOTTOM)
+                setBackgroundDrawable(
+                    GradientDrawable().apply {
+                        setColor(Color.rgb(46, 46, 46))
+                        cornerRadius = dp(16).toFloat()
+                    },
+                )
+                val metrics = activity.resources.displayMetrics
+                setLayout(metrics.widthPixels, (metrics.heightPixels * 0.72f).toInt())
+            }
+        }.onFailure { reportFailure("failed to show ai summary dialog", it) }
     }
 
     internal fun showDownload(activity: Activity) {

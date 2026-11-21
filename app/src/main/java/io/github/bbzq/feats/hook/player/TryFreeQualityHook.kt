@@ -84,7 +84,8 @@ class TryFreeQualityHook(env: io.github.bbzq.feats.RoamingEnv) : BaseRoamingHook
                         statsSpan.setSpan(object : android.text.style.ClickableSpan() {
                             override fun onClick(widget: android.view.View) {
                                 val targetActivity = findActivity(widget.context) ?: activity
-                                VideoStatsOverlayController.getOrCreate(targetActivity).showStats(targetActivity)
+                                VideoStatsOverlayController.getOrCreate(targetActivity)
+                                    .showStats(targetActivity, ModuleSettings.isAiVideoSummaryEnabled(prefs))
                             }
                             override fun updateDrawState(ds: android.text.TextPaint) {
                                 super.updateDrawState(ds)

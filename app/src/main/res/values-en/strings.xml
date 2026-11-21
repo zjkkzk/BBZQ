@@ -39,6 +39,8 @@
     <string name="quality_first_use_hint">On first use, change the quality once manually in the player, then restart to apply.</string>
     <string name="video_download_title">Video download</string>
     <string name="video_download_summary">Adds a download entry to the video description, supports qualities up to 8K and merges them into MP4 automatically.</string>
+    <string name="ai_video_summary_title">AI video summary</string>
+    <string name="ai_video_summary_summary">Requires "Video download" (Video stats UI). Adds an AI Summary entry inside the Video Stats dialog to fetch summary and outline via the official API.</string>
     <string name="auto_like_video_detail_title">Auto-like on video page</string>
     <string name="auto_like_video_detail_summary">Likes the video automatically when you open its detail page.</string>
     <string name="fix_live_quality_url_title">Fix live quality URL</string>
