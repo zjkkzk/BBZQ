@@ -96,6 +96,7 @@ object BiliSymbolResolver {
     fun resolve(
         hostContext: Context,
         classLoader: ClassLoader,
+        moduleContext: Context? = null,
         notifyUserOnAsyncComplete: Boolean = false,
         log: (String, Throwable?) -> Unit,
     ): BiliHookSymbols {
@@ -143,11 +144,16 @@ object BiliSymbolResolver {
                         log("BiliSymbolResolver: async full DexKit scan completed and cached fp=$fingerprint", null)
                         publishStatus(appContext, fullSymbols, log)
                         if (notifyUserOnAsyncComplete) {
+                            val toastText = runCatching {
+                                (moduleContext ?: appContext).getString(io.github.bbzq.R.string.symbol_cache_updated_restart_toast)
+                            }.getOrElse {
+                                "BBZQ 符号缓存已更新，重启哔哩哔哩后完整生效"
+                            }
                             Handler(Looper.getMainLooper()).post {
                                 runCatching {
                                     Toast.makeText(
                                         appContext,
-                                        "BBZQ 符號快取已更新，重啟嗶哩嗶哩後完整生效",
+                                        toastText,
                                         Toast.LENGTH_LONG,
                                     ).show()
                                 }.onFailure { toastError ->

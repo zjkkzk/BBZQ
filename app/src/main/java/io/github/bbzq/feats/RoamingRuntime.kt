@@ -168,6 +168,7 @@ object RoamingRuntime {
         val symbols = BiliSymbolResolver.resolve(
             hostContext = env.hostContext,
             classLoader = classLoader,
+            moduleContext = env.moduleContext,
             notifyUserOnAsyncComplete = processScope == ProcessScope.MAIN,
             log = log,
         )

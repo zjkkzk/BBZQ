@@ -338,6 +338,7 @@
     <string name="symbol_cache_refresh_confirm">清除並重掃</string>
     <string name="symbol_cache_refresh_running_toast">正在重新掃描</string>
     <string name="symbol_cache_refresh_submitted_toast">等待重啟</string>
+    <string name="symbol_cache_updated_restart_toast">BBZQ 符號快取已更新，重啟嗶哩嗶哩後完整生效</string>
     <string name="symbol_cache_refresh_launch_host_failed_toast">無法開啟 B 站，請手動返回後等待重掃完成</string>
     <string name="version_hidden_entry_toast">已顯示隱藏入口</string>
     <string name="settings_done">完成</string>
