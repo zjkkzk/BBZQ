@@ -10,6 +10,7 @@ import io.github.bbzq.feats.hookBefore
 import io.github.bbzq.feats.symbol.RestoredMineProfileSymbols
 import java.util.Collections
 import java.util.WeakHashMap
+import java.lang.reflect.Method
 import kotlin.LazyThreadSafetyMode
 
 class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
@@ -93,6 +94,9 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
         val getUri = classLoader.findClassOrNull(MENU_ITEM_CLASS)
             ?.declaredMethods
             ?.firstOrNull { it.name == "getUri" && it.parameterCount == 0 && it.returnType == String::class.java }
+        val getId = classLoader.findClassOrNull(MENU_ITEM_CLASS)
+            ?.declaredMethods
+            ?.firstOrNull { it.name == "getId" && it.parameterCount == 0 && it.returnType == Long::class.javaPrimitiveType }
         val setLocalShow = classLoader.findClassOrNull(MENU_ITEM_CLASS)
             ?.declaredMethods
             ?.firstOrNull { it.name == "setLocalShow" && it.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType)) }
@@ -114,6 +118,31 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 ArrayList(master)
             }
 
+            // Ensure "设置" is present in the "更多服务" group
+            val hasSettingsInMaster = masterSnapshot.any { item ->
+                if (item == null) false else {
+                    val title = runCatching { getTitle.invoke(item) as? String }.getOrNull()?.trim()
+                    val uri = runCatching { getUri?.invoke(item) as? String }.getOrNull()?.trim()
+                    val id = runCatching { getId?.invoke(item) as? Long }.getOrNull()
+                    isMineSettingsItem(title, uri, id)
+                }
+            }
+
+            if (!hasSettingsInMaster && isMoreServiceGroup(group, masterSnapshot)) {
+                val settingsItem = createSettingsItem()
+                if (settingsItem != null) {
+                    synchronized(master) {
+                        if (!master.contains(settingsItem)) {
+                            master.add(settingsItem)
+                        }
+                    }
+                    if (!masterSnapshot.contains(settingsItem)) {
+                        masterSnapshot.add(settingsItem)
+                    }
+                    recordIntoBacking(group, settingsItem, insertAtStart = false)
+                }
+            }
+
             val hidden = if (ModuleSettings.isCustomMineComponentHideEnabled(prefs)) {
                 ModuleSettings.getHiddenMineComponents(prefs)
             } else {
@@ -129,7 +158,8 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 }
                 val title = runCatching { getTitle.invoke(item) as? String }.getOrNull()?.trim()
                 val uri = runCatching { getUri?.invoke(item) as? String }.getOrNull()?.trim()
-                val isSettings = isMineSettingsItem(title, uri)
+                val id = runCatching { getId?.invoke(item) as? Long }.getOrNull()
+                val isSettings = isMineSettingsItem(title, uri, id)
 
                 if (!title.isNullOrBlank() && !isSettings) {
                     titles.add(title)
@@ -143,43 +173,90 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
                 }
             }
 
+            // Guarantee that if this is the "更多服务" group, kept list ALWAYS contains settings item
+            val hasSettingsInKept = kept.any { item ->
+                if (item == null) false else {
+                    val title = runCatching { getTitle.invoke(item) as? String }.getOrNull()?.trim()
+                    val uri = runCatching { getUri?.invoke(item) as? String }.getOrNull()?.trim()
+                    val id = runCatching { getId?.invoke(item) as? Long }.getOrNull()
+                    isMineSettingsItem(title, uri, id)
+                }
+            }
+            if (!hasSettingsInKept && isMoreServiceGroup(group, masterSnapshot)) {
+                val settingsItem = createSettingsItem()
+                if (settingsItem != null) {
+                    kept.add(settingsItem)
+                    synchronized(master) {
+                        if (!master.contains(settingsItem)) master.add(settingsItem)
+                    }
+                    recordIntoBacking(group, settingsItem, insertAtStart = false)
+                }
+            }
+
             if (titles.isNotEmpty() && seenMenuTitles.addAll(titles)) {
                 saveKnownComponents(titles)
             }
 
             // 每次返回獨立列表副本以避免併發遍歷 ConcurrentModificationException（#134），
-            // 同時將宿主對回傳列表的 add/addAll（如追加本地「設定」項）同步回 master，避免入口消失（#135）。
-            param.result = SyncedMenuItemList(kept, master)
+            // 同時將宿主對回傳列表的 add/addAll（如追加本地「設定」項）同步回 master 和底層 itemList，避免入口消失（#135）。
+            param.result = SyncedMenuItemList(
+                initialItems = kept,
+                master = master,
+                group = group,
+                getTitle = getTitle,
+                getUri = getUri,
+                getId = getId,
+                isMineSettings = ::isMineSettingsItem,
+                onRecordBacking = ::recordIntoBacking,
+            )
         }
     }
 
     private class SyncedMenuItemList(
         initialItems: List<Any?>,
         private val master: MutableList<Any?>,
+        private val group: Any?,
+        private val getTitle: Method?,
+        private val getUri: Method?,
+        private val getId: Method?,
+        private val isMineSettings: (String?, String?, Long?) -> Boolean,
+        private val onRecordBacking: (Any?, Any?, Boolean) -> Unit,
     ) : ArrayList<Any?>(initialItems) {
         override fun add(element: Any?): Boolean {
+            if (isDuplicateSettings(element)) return true
             val changed = super.add(element)
             recordIntoMaster(element, insertAtStart = false)
+            onRecordBacking(group, element, false)
             return changed
         }
 
         override fun add(index: Int, element: Any?) {
+            if (isDuplicateSettings(element)) return
             super.add(index, element)
             recordIntoMaster(element, insertAtStart = index == 0)
+            onRecordBacking(group, element, index == 0)
         }
 
         override fun addAll(elements: Collection<Any?>): Boolean {
-            val changed = super.addAll(elements)
+            val toAdd = elements.filterNot { isDuplicateSettings(it) }
+            val changed = super.addAll(toAdd)
             if (changed) {
-                elements.forEach { recordIntoMaster(it, insertAtStart = false) }
+                toAdd.forEach {
+                    recordIntoMaster(it, insertAtStart = false)
+                    onRecordBacking(group, it, false)
+                }
             }
             return changed
         }
 
         override fun addAll(index: Int, elements: Collection<Any?>): Boolean {
-            val changed = super.addAll(index, elements)
+            val toAdd = elements.filterNot { isDuplicateSettings(it) }
+            val changed = super.addAll(index, toAdd)
             if (changed) {
-                elements.forEach { recordIntoMaster(it, insertAtStart = index == 0) }
+                toAdd.forEach {
+                    recordIntoMaster(it, insertAtStart = index == 0)
+                    onRecordBacking(group, it, index == 0)
+                }
             }
             return changed
         }
@@ -187,7 +264,24 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
         override fun set(index: Int, element: Any?): Any? {
             val previous = super.set(index, element)
             recordIntoMaster(element, insertAtStart = false)
+            onRecordBacking(group, element, false)
             return previous
+        }
+
+        private fun isDuplicateSettings(element: Any?): Boolean {
+            if (element == null) return false
+            val title = runCatching { getTitle?.invoke(element) as? String }.getOrNull()?.trim()
+            val uri = runCatching { getUri?.invoke(element) as? String }.getOrNull()?.trim()
+            val id = runCatching { getId?.invoke(element) as? Long }.getOrNull()
+            if (!isMineSettings(title, uri, id)) return false
+            return this.any { existing ->
+                if (existing == null) false else {
+                    val exTitle = runCatching { getTitle?.invoke(existing) as? String }.getOrNull()?.trim()
+                    val exUri = runCatching { getUri?.invoke(existing) as? String }.getOrNull()?.trim()
+                    val exId = runCatching { getId?.invoke(existing) as? Long }.getOrNull()
+                    isMineSettings(exTitle, exUri, exId)
+                }
+            }
         }
 
         private fun recordIntoMaster(element: Any?, insertAtStart: Boolean) {
@@ -348,7 +442,100 @@ class MineProfileHook(env: RoamingEnv) : BaseRoamingHook(env) {
         true
     }.getOrDefault(false)
 
-    private fun isMineSettingsItem(title: String?, uri: String?): Boolean {
+    private fun isMoreServiceGroup(group: Any, items: List<Any?>): Boolean {
+        val title = runCatching {
+            group.javaClass.getDeclaredMethod("getTitle").invoke(group) as? String
+        }.getOrNull()?.trim()
+        if (!title.isNullOrBlank()) {
+            if (title == "更多服务" || title == "更多服務" || title.contains("更多") || title.contains("More") ||
+                title == "其他设置" || title == "其他設定" || title.contains("设置") || title.contains("設定")
+            ) {
+                return true
+            }
+        }
+        val moduleType = runCatching {
+            group.javaClass.getDeclaredMethod("getModuleType").invoke(group) as? Int
+        }.getOrNull()
+        if (moduleType == 3) {
+            return true
+        }
+        val getItemTitle = classLoader.findClassOrNull(MENU_ITEM_CLASS)
+            ?.declaredMethods
+            ?.firstOrNull { it.name == "getTitle" && it.parameterCount == 0 && it.returnType == String::class.java }
+        val getItemUri = classLoader.findClassOrNull(MENU_ITEM_CLASS)
+            ?.declaredMethods
+            ?.firstOrNull { it.name == "getUri" && it.parameterCount == 0 && it.returnType == String::class.java }
+        for (item in items) {
+            if (item == null) continue
+            val itemTitle = runCatching { getItemTitle?.invoke(item) as? String }.getOrNull()?.trim()
+            val itemUri = runCatching { getItemUri?.invoke(item) as? String }.getOrNull()?.trim()
+            if (itemTitle != null) {
+                if (itemTitle.contains("未成年") || itemTitle.contains("青少年") ||
+                    itemTitle.contains("客服") || itemTitle.contains("听视频") ||
+                    itemTitle.contains("聽視頻") || itemTitle.contains("小黑屋")
+                ) {
+                    return true
+                }
+            }
+            if (itemUri != null) {
+                if (itemUri.contains("teenagers") || itemUri.contains("customer_service") || itemUri.contains("feedback")) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun createSettingsItem(): Any? {
+        val itemClass = classLoader.findClassOrNull(MENU_ITEM_CLASS) ?: return null
+        return runCatching {
+            val item = itemClass.getDeclaredConstructor().newInstance()
+            val hostContext = env.hostContext
+            val res = hostContext.resources
+            val stringId = res.getIdentifier("settings_global_string_256", "string", env.packageName)
+                .takeIf { it != 0 } ?: 0x7f1140bf
+            val drawableId = res.getIdentifier("ic_mine_setting", "drawable", env.packageName)
+                .takeIf { it != 0 } ?: 0x7f081711
+            val title = runCatching { hostContext.getString(stringId) }.getOrNull() ?: "设置"
+
+            itemClass.getDeclaredField("id").apply { isAccessible = true }.set(item, 10L)
+            itemClass.getDeclaredField("title").apply { isAccessible = true }.set(item, title)
+            itemClass.getDeclaredField("uri").apply { isAccessible = true }.set(item, "activity://main/preference")
+            itemClass.getDeclaredField("iconResId").apply { isAccessible = true }.set(item, drawableId)
+            itemClass.getDeclaredField("localShow").apply { isAccessible = true }.set(item, true)
+            item
+        }.onFailure {
+            log("MineProfileHook: failed to create fallback settings item", it)
+        }.getOrNull()
+    }
+
+    private fun recordIntoBacking(group: Any?, element: Any?, insertAtStart: Boolean = false) {
+        if (element == null || group == null) return
+        runCatching {
+            val field = group.javaClass.getDeclaredField("itemList").apply { isAccessible = true }
+            val backing = field.get(group)
+            if (backing is MutableList<*>) {
+                @Suppress("UNCHECKED_CAST")
+                val mutable = backing as MutableList<Any?>
+                synchronized(mutable) {
+                    if (!mutable.contains(element)) {
+                        if (insertAtStart) mutable.add(0, element) else mutable.add(element)
+                    }
+                }
+            } else if (backing is List<*>) {
+                val newBacking = ArrayList<Any?>(backing)
+                if (!newBacking.contains(element)) {
+                    if (insertAtStart) newBacking.add(0, element) else newBacking.add(element)
+                    field.set(group, newBacking)
+                }
+            }
+        }.onFailure {
+            log("MineProfileHook: failed to record element into group backing itemList", it)
+        }
+    }
+
+    private fun isMineSettingsItem(title: String?, uri: String?, id: Long? = null): Boolean {
+        if (id == 10L) return true
         if (ModuleSettings.isMineSettingsTitle(title)) return true
         if (uri != null && (uri.contains("preference") || uri.contains("setting"))) return true
         return false
