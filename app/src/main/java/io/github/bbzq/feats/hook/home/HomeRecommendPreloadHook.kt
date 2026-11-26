@@ -57,12 +57,13 @@ class HomeRecommendPreloadHook(env: RoamingEnv) : BaseRoamingHook(env) {
             type.interfaces.any { it.name == RECYCLER_CHILD_ATTACH_LISTENER }
 
     private companion object {
-        // widget.g/h/i drift across builds; 9.19.0 moved the listener to the root package as d571, 9.20.0 as pmg1.
+        // widget.g/h/i drift across builds; 9.19.0 moved the listener to the root package as d571, 9.20.0 as pmg1, 9.21.0 as zag1.
         private const val LEGACY_LOAD_MORE_LISTENER = "com.bilibili.pegasus.widget.h"
         private val HOME_LOAD_MORE_LISTENERS = listOf(
             LEGACY_LOAD_MORE_LISTENER,
             "com.bilibili.pegasus.widget.g",
             "com.bilibili.pegasus.widget.i",
+            "zag1",
             "pmg1",
             "d571",
         )
